@@ -6,7 +6,7 @@ import re
 
 def extract_info_from_image(image_path):
     """
-    Extrae información de una imagen de historia clínica usando OpenAI GPT-4o (versión actualizada).
+    Extrae información específica de una imagen de historia clínica usando OpenAI GPT-4o.
     
     Args:
         image_path (str): Ruta a la imagen de la historia clínica
@@ -18,7 +18,7 @@ def extract_info_from_image(image_path):
         img_bytes = f.read()
 
     prompt = """
-Lee esta historia clínica escaneada. Extrae los siguientes campos en JSON:
+Lee esta historia clínica escaneada y extrae SOLO los siguientes campos en formato JSON:
 {
   "Nombre": "",
   "Cédula": "",
@@ -28,14 +28,21 @@ Lee esta historia clínica escaneada. Extrae los siguientes campos en JSON:
   "Tabaquismo": "SI/NO",
   "PSA_total": "",
   "Tratamiento": "",
-  "Diagnóstico": "",
-  "Imagenología": ""
+  "Examenes_laboratorio": "",
+  "Antecedentes": ""
 }
+
+Instrucciones específicas:
+1. Para PSA_total: Extrae solo el valor numérico o la descripción exacta (ej: "alterado", "< 0.1", "82.5 ng/mL")
+2. Para Hipertenso, Diabético y Tabaquismo: Responde SOLO con "SI" o "NO"
+3. Si no encuentras información para algún campo, déjalo vacío, no inventes información
+4. Para Antecedentes: Solo incluye información relevante como enfermedades previas
+5. Asegúrate de buscar en todo el documento estos datos, pueden estar en diferentes secciones
 """
 
     try:
         response = openai.chat.completions.create(
-            model="gpt-4o",  # Usando el modelo actualizado que soporta visión
+            model="gpt-4o",
             messages=[
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
