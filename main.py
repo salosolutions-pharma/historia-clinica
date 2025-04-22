@@ -67,6 +67,40 @@ def test_api_connection():
         print(f"❌ Error al conectar con la API de OpenAI: {e}")
         return False
 
+def merge_patient_data(page_data_list):
+    """
+    Combina la información de múltiples páginas del mismo paciente
+    
+    Args:
+        page_data_list (list): Lista de diccionarios con la información de cada página
+        
+    Returns:
+        dict: Diccionario con la información combinada
+    """
+    if not page_data_list:
+        return None
+    
+    # Empezamos con la primera página
+    merged_data = page_data_list[0].copy()
+    
+    # Combinamos con el resto de páginas
+    for page_data in page_data_list[1:]:
+        for key, value in page_data.items():
+            # Si el campo está vacío en merged_data pero tiene valor en page_data, lo actualizamos
+            if (not merged_data.get(key) or merged_data[key] == "") and value:
+                merged_data[key] = value
+            # Si ambos tienen valor y son diferentes, concatenamos (excepto campos específicos)
+            elif value and merged_data.get(key) and value != merged_data[key]:
+                if key in ["Nombre", "Cédula", "Edad", "Hipertenso", "Diabético", "Tabaquismo"]:
+                    # Para estos campos usamos el valor no vacío o el de la primera página
+                    continue
+                else:
+                    # Para el resto de campos, concatenamos si hay información nueva
+                    if value not in merged_data[key]:
+                        merged_data[key] = f"{merged_data[key]}; {value}"
+    
+    return merged_data
+
 def main():
     """Función principal del programa"""
     
@@ -96,7 +130,7 @@ def main():
     # Crear carpeta temporal para imágenes
     temp_folder = TEMP_FOLDER
     
-    data = []
+    patients_data = []
     processed_count = 0
     error_count = 0
     
@@ -109,7 +143,8 @@ def main():
             images = pdf_to_images(pdf_path, temp_folder)
             
             # Procesar cada imagen
-            file_processed = False
+            page_data_list = []
+            
             for img_path in images:
                 print(f"  - Analizando imagen: {os.path.basename(img_path)}")
                 
@@ -119,20 +154,36 @@ def main():
                     # Añadir información de origen
                     info["Origen_PDF"] = file
                     info["Página"] = os.path.basename(img_path).split("_page")[1].replace(".png", "")
-                    data.append(info)
+                    page_data_list.append(info)
                     print(f"    ✅ Información extraída correctamente")
-                    file_processed = True
                 else:
                     print(f"    ❌ No se pudo extraer información de esta imagen")
             
-            if file_processed:
+            # Si se extrajo información de al menos una página
+            if page_data_list:
+                # Combinar información de todas las páginas del mismo PDF
+                merged_data = merge_patient_data(page_data_list)
+                patients_data.append(merged_data)
                 processed_count += 1
+                print(f"  ✅ Historia clínica procesada correctamente")
             else:
                 error_count += 1
+                print(f"  ❌ No se pudo extraer información de este PDF")
         
         # Si se extrajo información, crear DataFrame y guardar CSV
-        if data:
-            df = pd.DataFrame(data)
+        if patients_data:
+            df = pd.DataFrame(patients_data)
+            # Ordenar las columnas para que las más importantes aparezcan primero
+            column_order = [
+                "Nombre", "Cédula", "Edad", "Hipertenso", "Diabético", "Tabaquismo", 
+                "PSA_total", "Tratamiento", "Examenes_laboratorio", "Antecedentes",
+                "Origen_PDF", "Página"
+            ]
+            # Filtrar para incluir solo las columnas que existen
+            existing_columns = [col for col in column_order if col in df.columns]
+            remaining_columns = [col for col in df.columns if col not in column_order]
+            df = df[existing_columns + remaining_columns]
+            
             df.to_csv(OUTPUT_CSV, index=False)
             print(f"\n✅ Datos extraídos guardados en: {OUTPUT_CSV}")
             print(f"📊 Resumen: {processed_count} PDFs procesados exitosamente, {error_count} con errores")
