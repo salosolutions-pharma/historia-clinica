@@ -1,0 +1,42 @@
+# Archivos de entorno
+.env
+.env.example
+
+# Archivos generados
+*.png
+*.csv
+temp_images/
+
+# Archivos de PDF (opcional, comenta si quieres incluir PDFs de ejemplo)
+pdfs/*
+!pdfs/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+
+# IDEs y editores
+.idea/
+.vscode/
+*.swp
+*.swo
