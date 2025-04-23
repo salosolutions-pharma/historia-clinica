@@ -59,7 +59,7 @@ class HistoriasClinicasExtractor:
         try:
             # Abrir la página
             self.driver.get("https://programahistoriasclinicas.com/")
-            time.sleep(5)  # Esperamos más tiempo para que cargue completamente
+            time.sleep(3)  # Esperamos más tiempo para que cargue completamente
             
             # Tomar captura de pantalla de diagnóstico
             self.driver.save_screenshot("login_page.png")
@@ -180,7 +180,7 @@ class HistoriasClinicasExtractor:
                 if 'login_btn' in locals():
                     login_btn.click()
                 
-                time.sleep(5)
+                time.sleep(3)
                 
                 # Verificar si el login fue exitoso
                 self.driver.save_screenshot("post_login.png")
@@ -210,7 +210,7 @@ class HistoriasClinicasExtractor:
             print(f"📸 Captura de pantalla guardada en dashboard.png")
             
             # Esperar a que cargue completamente la página
-            time.sleep(5)
+            time.sleep(3)
             
             # Intentar diferentes métodos para encontrar el enlace a Pacientes
             try:
@@ -260,14 +260,14 @@ class HistoriasClinicasExtractor:
                             print("❌ No se encontró ningún enlace a Pacientes con JavaScript")
                             # Intentar ir directamente a la URL
                             self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
-                            time.sleep(5)
+                            time.sleep(3)
             
             # Si encontramos el botón con los métodos 1-3, hacer clic
             if 'pacientes_btn' in locals():
                 pacientes_btn.click()
             
             # Esperar a que cargue la página de pacientes
-            time.sleep(5)
+            time.sleep(3)
             
             # Tomar captura para ver si cargó correctamente
             self.driver.save_screenshot("pacientes_page.png")
@@ -297,7 +297,7 @@ class HistoriasClinicasExtractor:
             try:
                 print("🔄 Intentando navegar directamente a la URL de pacientes...")
                 self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
-                time.sleep(5)
+                time.sleep(3)
                 self.driver.save_screenshot("direct_pacientes.png")
                 
                 # Verificar si funcionó
@@ -407,7 +407,7 @@ class HistoriasClinicasExtractor:
                 imprimir_btn.click()
                 print("✅ Opción 'Imprimir Histórico' clicada")
 
-                time.sleep(5)
+                time.sleep(3)
                 self.driver.save_screenshot(f"post_imprimir_{paciente_index}.png")
 
                 if len(self.driver.window_handles) > 1:
