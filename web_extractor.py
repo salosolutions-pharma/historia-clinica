@@ -527,20 +527,22 @@ class HistoriasClinicasExtractor:
                 try:
                     print("\U0001F50D Haciendo clic en el nombre del paciente usando JavaScript")
                     script = """
-                        const apellido = arguments[0].split(',')[0].trim().toLowerCase();
+                        const apellido = arguments[0].split(',')[0].trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                         const filas = document.querySelectorAll('table tbody tr');
                         for (let i = 0; i < filas.length; i++) {
-                            if (filas[i].textContent.toLowerCase().includes(apellido)) {
+                            const textoFila = filas[i].textContent.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                            if (textoFila.includes(apellido)) {
                                 const celda = filas[i].querySelector('td:first-child');
                                 if (celda) {
                                     celda.scrollIntoView({behavior: 'smooth', block: 'center'});
-                                    setTimeout(() => celda.click(), 500);
+                                    celda.click();
                                     return 'Clic en nombre de paciente';
                                 }
                             }
                         }
                         return 'No se encontró paciente por apellido';
                     """
+
                     resultado = self.driver.execute_script(script, nombre_paciente)
                     print(f"✅ Resultado del clic con JS: {resultado}")
                     clicked = True
