@@ -376,9 +376,9 @@ class HistoriasClinicasExtractor:
 
             # Ir a pestaña de Consultas H.Clínica
             try:
-                print("🔍 Buscando el tab de Consultas H.Clínica")
+                print("🔍 Buscando el tab de Consultas H.Clínica por texto y rol...")
                 consultas_tab = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Consultas H.Clínica')]"))
+                    EC.element_to_be_clickable((By.XPATH, "//div[@role='tab' and contains(., 'Consultas H.Clínica')]"))
                 )
                 consultas_tab.click()
                 print("✅ Tab Consultas H.Clínica clickeado")
