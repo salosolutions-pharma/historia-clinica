@@ -311,198 +311,35 @@ class HistoriasClinicasExtractor:
     def obtener_lista_pacientes(self):
         print("📋 Obteniendo lista de pacientes...")
         try:
-            # Esperar a que cargue la lista de pacientes completamente
-            time.sleep(7)  # Aumentamos el tiempo para asegurar carga completa
-            
-            # Tomar captura para diagnóstico
+            time.sleep(7)
             self.driver.save_screenshot("pacientes_list.png")
-            print(f"📸 Captura de pantalla guardada en pacientes_list.png")
-            
-            # Usar ID específicos verificando el HTML de la página
-            # ESTRATEGIA 1: Buscar por los iconos azules que son específicamente los lápices de edición
-            try:
-                # Buscar explícitamente los íconos azules por CSS (color azul)
-                edit_icons = self.driver.find_elements(By.CSS_SELECTOR, "svg.fa-pencil-alt, svg.fa-pencil, .blue svg, [style*='color: blue'] svg")
-                if edit_icons and len(edit_icons) > 0:
-                    print(f"✅ Encontrados {len(edit_icons)} íconos de lápiz por CSS específico")
-                    
-                    pacientes_ids = []
-                    for i, icon in enumerate(edit_icons[:3]):  # Limitar a los primeros 3
-                        nombre = ""
-                        # Intentar obtener el nombre del paciente (puede estar en un elemento cercano)
-                        try:
-                            # Navegar desde el icono hacia arriba hasta la fila y luego a la primera celda
-                            row = icon
-                            for _ in range(4):  # Buscar hasta 4 niveles hacia arriba
-                                try:
-                                    row = row.find_element(By.XPATH, "..")
-                                    if row.tag_name == "tr":
-                                        break
-                                except:
-                                    pass
-                            
-                            if row and row.tag_name == "tr":
-                                # Obtener el texto de la primera celda
-                                nombre_cell = row.find_element(By.CSS_SELECTOR, "td:first-child")
-                                nombre = nombre_cell.text.strip()
-                        except:
-                            pass
-                        
-                        # Si no pudimos obtener el nombre, usar nombres predefinidos
-                        if not nombre:
-                            if i == 0:
-                                nombre = "GARCIA LOPEZ, ANTONIO"
-                            elif i == 1:
-                                nombre = "PEREZ VILLA, JOSE MIGUEL"
-                            else:
-                                nombre = "VILLANUEVA, LEOPOLDO"
-                        
-                        pacientes_ids.append({"index": i, "nombre": nombre, "element": icon})
-                    
-                    return pacientes_ids
-            except Exception as e:
-                print(f"⚠️ Error al buscar iconos específicos: {str(e)}")
-            
-            # ESTRATEGIA 2: Intentar encontrar los lápices directamente por su clase o posición usando JavaScript
-            try:
-                print("🔍 Buscando lápices usando JavaScript...")
-                script = """
-                // Buscar todos los elementos SVG en la página
-                var svgs = document.querySelectorAll('svg');
-                var lapices = [];
-                
-                // Filtrar solo aquellos que parecen ser lápices de edición
-                for (var i = 0; i < svgs.length; i++) {
-                    var svg = svgs[i];
-                    
-                    // Verificar si es un ícono de lápiz por sus clases o atributos
-                    if (svg.classList.contains('fa-pencil-alt') || 
-                        svg.classList.contains('fa-pencil') || 
-                        svg.classList.contains('fa-edit') ||
-                        (svg.getAttribute('data-icon') && 
-                        ['pencil-alt', 'pencil', 'edit'].includes(svg.getAttribute('data-icon')))) {
-                        lapices.push(svg);
-                    }
-                    
-                    // Verificar por pathData que es característica de los lápices
-                    var paths = svg.querySelectorAll('path');
-                    for (var j = 0; j < paths.length; j++) {
-                        var d = paths[j].getAttribute('d');
-                        if (d && (d.includes('M497.9 142.1l-46.1 46.1c-4.7') || // Patrón común del ícono de lápiz
-                                d.includes('M290.74 93.24l128.02 128.02-278.95'))) {
-                            lapices.push(svg);
-                            break;
-                        }
-                    }
-                }
-                
-                // Devolver información sobre los lápices encontrados
-                return lapices.map(function(lapiz, index) {
-                    // Intentar encontrar el nombre del paciente
-                    var row = lapiz;
-                    var nombre = null;
-                    
-                    // Subir hasta encontrar la fila
-                    for (var i = 0; i < 5; i++) {
-                        if (!row.parentElement) break;
-                        row = row.parentElement;
-                        if (row.tagName === 'TR') break;
-                    }
-                    
-                    // Si encontramos una fila, obtener el nombre
-                    if (row.tagName === 'TR') {
-                        var firstCell = row.querySelector('td:first-child');
-                        if (firstCell) nombre = firstCell.textContent.trim();
-                    }
-                    
-                    // Si no pudimos obtener el nombre, usar nombres predefinidos
-                    if (!nombre) {
-                        if (index === 0) nombre = "GARCIA LOPEZ, ANTONIO";
-                        else if (index === 1) nombre = "PEREZ VILLA, JOSE MIGUEL";
-                        else nombre = "VILLANUEVA, LEOPOLDO";
-                    }
-                    
-                    return {
-                        index: index,
-                        nombre: nombre,
-                        left: lapiz.getBoundingClientRect().left,
-                        top: lapiz.getBoundingClientRect().top,
-                        width: lapiz.getBoundingClientRect().width,
-                        height: lapiz.getBoundingClientRect().height
-                    };
-                }).slice(0, 3); // Limitar a los primeros 3
-                """
-                
-                resultado = self.driver.execute_script(script)
-                if resultado and len(resultado) > 0:
-                    print(f"✅ Encontrados {len(resultado)} lápices con JavaScript")
-                    
-                    pacientes_ids = []
-                    for i, info in enumerate(resultado):
-                        # Usar las coordenadas para crear un clic más preciso
-                        left = info['left'] + (info['width'] / 2)
-                        top = info['top'] + (info['height'] / 2)
-                        
-                        pacientes_ids.append({
-                            "index": i,
-                            "nombre": info['nombre'],
-                            "coords": {"x": left, "y": top}
-                        })
-                    
-                    return pacientes_ids
-                else:
-                    print("❌ No se encontraron lápices con JavaScript")
-            except Exception as e:
-                print(f"❌ Error en la búsqueda con JavaScript: {str(e)}")
-            
-            # ESTRATEGIA 3: Hacerlo por posiciones basadas en las imágenes que vimos
-            print("⚠️ Usando estrategia de últomo recurso: selección por coordenadas fijas")
-            
-            # Obtenemos dimensiones de la ventana
-            window_size = self.driver.get_window_size()
-            window_width = window_size['width']
-            window_height = window_size['height']
-            
-            # Basándonos en la imagen, sabemos que los lápices están en la primera columna
-            # Aproximadamente en estas posiciones relativas (ajustar según sea necesario)
+
+            # Como se definió, usaremos coordenadas fijas según el orden visual
             pacientes_coords = [
-                # Para GARCIA LOPEZ, ANTONIO - Primera fila
-                {"x": 56, "y": 470},  # Coordenada aproximada del lápiz azul
-                # Para PEREZ VILLA, JOSE MIGUEL - Segunda fila
-                {"x": 56, "y": 520},  # Coordenada aproximada del lápiz azul
-                # Para VILLANUEVA, LEOPOLDO - Tercera fila
-                {"x": 56, "y": 570}   # Coordenada aproximada del lápiz azul
-            ]
-            
-            return [
-                {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO", "coords": pacientes_coords[0]},
-                {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL", "coords": pacientes_coords[1]},
-                {"index": 2, "nombre": "VILLANUEVA, LEOPOLDO", "coords": pacientes_coords[2]}
-            ]
-        
-        except Exception as e:
-            print(f"❌ Error al obtener lista de pacientes: {str(e)}")
-            # Fallback a datos manuales con coordenadas
-            window_size = self.driver.get_window_size()
-            window_width = window_size['width']
-            window_height = window_size['height']
-            
-            # Coordenadas relativas aproximadas basadas en la imagen
-            return [
                 {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO", "coords": {"x": 56, "y": 470}},
                 {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL", "coords": {"x": 56, "y": 520}},
                 {"index": 2, "nombre": "VILLANUEVA, LEOPOLDO", "coords": {"x": 56, "y": 570}}
             ]
+
+            print(f"✅ Coordenadas de pacientes generadas manualmente")
+            return pacientes_coords
+
+        except Exception as e:
+            print(f"❌ Error al obtener lista de pacientes: {str(e)}")
+            return []
+
     
     def procesar_paciente(self, paciente_info):
+        from selenium.webdriver.common.action_chains import ActionChains
+
         if isinstance(paciente_info, dict):
             paciente_index = paciente_info.get('index', 0)
             nombre_paciente = paciente_info.get('nombre', f"Paciente #{paciente_index+1}")
-            element = paciente_info.get('element', None)
+            coords = paciente_info.get('coords', None)
         else:
             paciente_index = paciente_info
             nombre_paciente = f"Paciente #{paciente_index+1}"
-            element = None
+            coords = None
 
         print(f"\U0001F464 Procesando paciente: {nombre_paciente}...")
 
@@ -510,47 +347,19 @@ class HistoriasClinicasExtractor:
             self.driver.save_screenshot(f"pre_click_paciente_{paciente_index}.png")
             clicked = False
 
-            # MÉTODO 1: Clic directo sobre el elemento si está presente
-            if element is not None:
+            # MÉTODO 1: Clic por coordenadas en el lápiz azul o nombre
+            if coords:
                 try:
-                    print("\U0001F50D Intentando clic directo en el elemento")
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-                    time.sleep(1)
-                    self.driver.execute_script("arguments[0].click();", element)
+                    print(f"📍 Clic por coordenadas: ({coords['x']}, {coords['y']})")
+                    actions = ActionChains(self.driver)
+                    actions.move_by_offset(coords["x"], coords["y"]).click().perform()
                     clicked = True
-                    print("✅ Clic en elemento exitoso via JavaScript")
+                    print("✅ Clic por coordenadas exitoso")
                 except Exception as e:
-                    print(f"⚠️ Error haciendo clic en elemento: {str(e)}")
-
-            # MÉTODO 2: JavaScript sobre la celda con el nombre del paciente
-            if not clicked:
-                try:
-                    print("\U0001F50D Haciendo clic en el nombre del paciente usando JavaScript")
-                    script = """
-                        const apellido = arguments[0].split(',')[0].trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                        const filas = document.querySelectorAll('table tbody tr');
-                        for (let i = 0; i < filas.length; i++) {
-                            const textoFila = filas[i].textContent.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                            if (textoFila.includes(apellido)) {
-                                const celda = filas[i].querySelector('td:first-child');
-                                if (celda) {
-                                    celda.scrollIntoView({behavior: 'smooth', block: 'center'});
-                                    celda.click();
-                                    return 'Clic en nombre de paciente';
-                                }
-                            }
-                        }
-                        return 'No se encontró paciente por apellido';
-                    """
-
-                    resultado = self.driver.execute_script(script, nombre_paciente)
-                    print(f"✅ Resultado del clic con JS: {resultado}")
-                    clicked = True
-                except Exception as e:
-                    print(f"❌ Error haciendo clic en nombre del paciente con JS: {str(e)}")
+                    print(f"❌ Error haciendo clic por coordenadas: {str(e)}")
 
             if not clicked:
-                print("❌ No se pudo hacer clic en el paciente después de intentar todos los métodos")
+                print("❌ No se pudo hacer clic en el paciente por coordenadas")
                 return False
 
             time.sleep(3)
@@ -654,6 +463,7 @@ class HistoriasClinicasExtractor:
             except:
                 pass
             return False
+
 
     def extraer_info_paciente(self):
         """Extrae información básica del paciente desde la ficha"""
