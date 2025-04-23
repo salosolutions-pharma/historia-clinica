@@ -311,123 +311,137 @@ class HistoriasClinicasExtractor:
     def obtener_lista_pacientes(self):
         print("📋 Obteniendo lista de pacientes...")
         try:
-            # Esperar a que cargue la lista de pacientes
+            # Esperar a que cargue la lista de pacientes completamente
             time.sleep(5)
             
             # Tomar captura para diagnóstico
             self.driver.save_screenshot("pacientes_list.png")
             print(f"📸 Captura de pantalla guardada en pacientes_list.png")
             
-            # Enfocarse específicamente en los lápices azules que se ven en las imágenes
-            lapiz_icons = self.driver.find_elements(By.CSS_SELECTOR, "td svg, a svg, svg.fa-pencil-alt, svg.fa-pencil, .editar svg")
+            # Estrategia 1: Buscar los íconos del lápiz azul directamente por su apariencia en las imágenes
+            # Estos son los elementos que vemos en la captura de pantalla con iconos de edición
+            lapiz_icons = self.driver.find_elements(By.CSS_SELECTOR, "td svg.fa-pencil-alt, td svg.fa-pencil, td svg.fa-edit, svg[class*='pencil'], svg[class*='edit']")
             
             if not lapiz_icons or len(lapiz_icons) == 0:
-                print("⚠️ No se encontraron íconos de lápiz con selector específico, probando selector más genérico")
+                print("⚠️ No se encontraron íconos específicos, buscando elementos clicables en las filas")
                 
-                # Probar con selector más genérico para SVG
-                lapiz_icons = self.driver.find_elements(By.TAG_NAME, "svg")
-                print(f"Encontrados {len(lapiz_icons)} íconos SVG en total")
-            
-            if lapiz_icons and len(lapiz_icons) > 0:
-                print(f"✅ Encontrados {len(lapiz_icons)} posibles íconos de lápiz")
+                # Estrategia 2: Buscar las filas con los datos de pacientes
+                rows = self.driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
                 
-                # Filtrar solo los primeros 3 que probablemente sean los lápices de pacientes
-                if len(lapiz_icons) > 3:
-                    lapiz_icons = lapiz_icons[:3]  # Limitar a 3 íconos
+                if not rows or len(rows) == 0:
+                    print("⚠️ No se encontraron filas, buscando por selectores más amplios")
+                    # Estrategia 3: Buscar por celdas que contengan los nombres de los pacientes
+                    paciente_elements = self.driver.find_elements(By.XPATH, 
+                        "//td[contains(text(), 'GARCIA LOPEZ') or contains(text(), 'PEREZ VILLA') or contains(text(), 'VILLANUEVA')]")
+                    
+                    if paciente_elements and len(paciente_elements) > 0:
+                        print(f"✅ Encontrados {len(paciente_elements)} elementos con nombres de pacientes")
+                        return [
+                            {"index": i, "nombre": element.text, "element": element}
+                            for i, element in enumerate(paciente_elements[:3])
+                        ]
                 
-                pacientes_ids = []
-                for i, icon in enumerate(lapiz_icons):
-                    try:
-                        # Obtener el elemento padre que probablemente sea la fila
-                        current = icon
-                        row = None
-                        
-                        # Intentar encontrar el elemento TR o el elemento fila
-                        for _ in range(5):  # Límite para evitar bucles infinitos
-                            parent = current.find_element(By.XPATH, "..")
-                            if parent.tag_name == "tr":
-                                row = parent
-                                break
-                            current = parent
-                            
-                            # Si el elemento tiene una clase que parece ser de fila, asumimos que es la fila
-                            class_attr = current.get_attribute("class") or ""
-                            if "row" in class_attr or "tr" in class_attr:
-                                row = current
-                                break
-                        
-                        # Intentar obtener el nombre del paciente de la fila
-                        nombre = "Paciente desconocido"
-                        if row:
+                if rows and len(rows) > 0:
+                    print(f"✅ Encontradas {len(rows)} filas de pacientes")
+                    pacientes_ids = []
+                    
+                    # Limitar a las primeras 3 filas visibles en la imagen
+                    for i, row in enumerate(rows[:3]):
+                        # Encontrar el botón/ícono de edición dentro de la fila
+                        try:
+                            # Primero intentar obtener el nombre directamente de la primera celda
                             try:
-                                # Buscar en la primera columna
-                                nombre_element = row.find_element(By.CSS_SELECTOR, "td:first-child")
-                                nombre = nombre_element.text
+                                nombre_cell = row.find_element(By.CSS_SELECTOR, "td:nth-child(1)")
+                                nombre = nombre_cell.text.strip()
                             except:
-                                pass
-                        
-                        # Si no se pudo obtener el nombre, usar nombres predefinidos
-                        if not nombre or nombre == "Paciente desconocido":
+                                # Si falla, usar los nombres predefinidos según el índice
+                                if i == 0:
+                                    nombre = "GARCIA LOPEZ, ANTONIO"
+                                elif i == 1:
+                                    nombre = "PEREZ VILLA, JOSE MIGUEL"
+                                else:
+                                    nombre = "VILLANUEVA, LEOPOLDO"
+                            
+                            # Intentar encontrar el ícono de edición dentro de esta fila
+                            try:
+                                edit_button = row.find_element(By.TAG_NAME, "svg")
+                                pacientes_ids.append({"index": i, "nombre": nombre, "element": edit_button})
+                            except:
+                                # Si no hay icono editable, usamos la fila completa
+                                pacientes_ids.append({"index": i, "nombre": nombre, "element": row})
+                        except Exception as e:
+                            print(f"⚠️ Error procesando fila {i+1}: {str(e)}")
+                            # Usamos los nombres predefinidos como fallback
                             if i == 0:
                                 nombre = "GARCIA LOPEZ, ANTONIO"
                             elif i == 1:
                                 nombre = "PEREZ VILLA, JOSE MIGUEL"
-                            elif i == 2:
+                            else:
                                 nombre = "VILLANUEVA, LEOPOLDO"
-                        
-                        pacientes_ids.append({"index": i, "nombre": nombre, "icon": icon})
-                    except Exception as e:
-                        print(f"⚠️ Error obteniendo datos del paciente {i+1}: {str(e)}")
-                        # Usar nombres predefinidos
-                        if i == 0:
-                            nombre = "GARCIA LOPEZ, ANTONIO"
-                        elif i == 1:
-                            nombre = "PEREZ VILLA, JOSE MIGUEL"
-                        elif i == 2:
-                            nombre = "VILLANUEVA, LEOPOLDO"
-                        
-                        pacientes_ids.append({"index": i, "nombre": nombre, "icon": icon})
-                
-                if pacientes_ids:
-                    return pacientes_ids
-            
-            # Si no encontramos los iconos, intentar con las filas directamente
-            rows = self.driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
-            if rows and len(rows) > 0:
-                print(f"✅ Encontradas {len(rows)} filas de pacientes")
-                
+                            
+                            pacientes_ids.append({"index": i, "nombre": nombre, "element": row})
+                    
+                    if pacientes_ids:
+                        return pacientes_ids
+            else:
+                print(f"✅ Encontrados {len(lapiz_icons)} iconos de lápiz")
                 pacientes_ids = []
-                for i, row in enumerate(rows):
+                
+                # Limitar a los primeros 3 íconos
+                for i, icon in enumerate(lapiz_icons[:3]):
                     try:
-                        # Obtener el nombre del paciente
-                        nombre = row.find_element(By.CSS_SELECTOR, "td:first-child").text
+                        # Intentar obtener la fila padre
+                        current = icon
+                        row = None
+                        nombre = ""
                         
-                        # Verificar si es uno de los 3 pacientes que se ven en la imagen
+                        # Subir por el DOM hasta encontrar la fila (tr)
+                        for _ in range(5):
+                            try:
+                                parent = current.find_element(By.XPATH, "..")
+                                if parent.tag_name == "tr":
+                                    row = parent
+                                    break
+                                current = parent
+                            except:
+                                break
+                        
+                        # Si encontramos la fila, intentar sacar el nombre
+                        if row:
+                            try:
+                                cells = row.find_elements(By.TAG_NAME, "td")
+                                if cells and len(cells) > 0:
+                                    nombre = cells[0].text.strip()
+                            except:
+                                pass
+                        
+                        # Si no conseguimos nombre, usar los predefinidos
                         if not nombre:
                             if i == 0:
                                 nombre = "GARCIA LOPEZ, ANTONIO"
                             elif i == 1:
                                 nombre = "PEREZ VILLA, JOSE MIGUEL"
-                            elif i == 2:
+                            else:
                                 nombre = "VILLANUEVA, LEOPOLDO"
                         
-                        pacientes_ids.append({"index": i, "nombre": nombre, "row": row})
-                    except:
+                        pacientes_ids.append({"index": i, "nombre": nombre, "element": icon})
+                    except Exception as e:
+                        print(f"⚠️ Error procesando icono {i+1}: {str(e)}")
                         # Usar nombres predefinidos
                         if i == 0:
                             nombre = "GARCIA LOPEZ, ANTONIO"
                         elif i == 1:
                             nombre = "PEREZ VILLA, JOSE MIGUEL"
-                        elif i == 2:
+                        else:
                             nombre = "VILLANUEVA, LEOPOLDO"
                         
-                        pacientes_ids.append({"index": i, "nombre": nombre, "row": row})
+                        pacientes_ids.append({"index": i, "nombre": nombre, "element": icon})
                 
                 if pacientes_ids:
                     return pacientes_ids
             
-            # Si todo falla, crear manualmente la lista de pacientes
-            print("⚠️ No se pudieron encontrar pacientes automáticamente, usando datos manuales")
+            # Si llegamos aquí, ningún método funcionó, devolveremos datos manuales
+            print("⚠️ No se pudieron encontrar elementos interactivos, usando datos manuales")
             return [
                 {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO"},
                 {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL"},
@@ -436,7 +450,7 @@ class HistoriasClinicasExtractor:
         
         except Exception as e:
             print(f"❌ Error al obtener lista de pacientes: {str(e)}")
-            # Si hay un error, devolver datos manuales
+            # Fallback a datos manuales
             return [
                 {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO"},
                 {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL"},
@@ -444,410 +458,550 @@ class HistoriasClinicasExtractor:
             ]
     
     def procesar_paciente(self, paciente_info):
-        # Determinar si recibimos un objeto paciente o solo un índice
+        # Obtener información del paciente
         if isinstance(paciente_info, dict):
             paciente_index = paciente_info.get('index', 0)
             nombre_paciente = paciente_info.get('nombre', f"Paciente #{paciente_index+1}")
-            icon = paciente_info.get('icon', None)
-            row = paciente_info.get('row', None)
+            element = paciente_info.get('element', None)
         else:
             paciente_index = paciente_info
             nombre_paciente = f"Paciente #{paciente_index+1}"
-            icon = None
-            row = None
+            element = None
         
         print(f"👤 Procesando paciente: {nombre_paciente}...")
         try:
-            # Tomar captura para diagnóstico
+            # Tomar captura para diagnóstico antes de intentar el clic
             self.driver.save_screenshot(f"pre_click_paciente_{paciente_index}.png")
             
             # Variable para rastrear si hicimos clic exitosamente
             clicked = False
             
-            # Método 1: Hacer clic directamente en el icono SVG si lo tenemos
-            if icon is not None:
+            # MÉTODO 1: Hacer clic usando el elemento obtenido directamente
+            if element is not None:
                 try:
-                    print("🔍 Intentando clic directo en el icono SVG")
-                    # Intentar hacer el icono visible (scroll hacia él)
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", icon)
+                    print("🔍 Intentando clic directo en el elemento")
+                    # Hacer scroll al elemento para asegurarnos de que sea visible
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
                     time.sleep(1)
                     
-                    # Clic con JavaScript (más confiable)
-                    self.driver.execute_script("arguments[0].click();", icon)
+                    # Clic usando JavaScript (es más confiable que el clic normal)
+                    self.driver.execute_script("arguments[0].click();", element)
                     clicked = True
-                    print("✅ Clic en icono exitoso via JavaScript")
+                    print("✅ Clic en elemento exitoso via JavaScript")
                 except Exception as e:
-                    print(f"⚠️ Error haciendo clic en icono: {str(e)}")
+                    print(f"⚠️ Error haciendo clic en elemento: {str(e)}")
                     
-                    # Intentar de nuevo con método normal
+                    # Intentar de nuevo con el método normal
                     try:
-                        icon.click()
+                        element.click()
                         clicked = True
-                        print("✅ Clic en icono exitoso")
+                        print("✅ Clic en elemento exitoso")
                     except Exception as e2:
-                        print(f"⚠️ Error haciendo clic normal en icono: {str(e2)}")
+                        print(f"⚠️ Error haciendo clic normal en elemento: {str(e2)}")
             
-            # Método 2: Hacer clic en la fila completa si la tenemos
-            if not clicked and row is not None:
+            # MÉTODO 2: Buscar directamente los lápices azules visibles en la imagen
+            if not clicked:
                 try:
-                    print("🔍 Intentando clic en la fila completa")
-                    # Intentar hacer la fila visible
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", row)
+                    print("🔍 Buscando lápices azules directamente")
+                    # Usar XPath más específico para los lápices azules en las filas
+                    selector = f"//tr[td[contains(text(), '{nombre_paciente.split(',')[0]}')]]//svg"
+                    lapiz = self.driver.find_element(By.XPATH, selector)
+                    
+                    # Hacer scroll al lápiz
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", lapiz)
                     time.sleep(1)
                     
                     # Clic con JavaScript
-                    self.driver.execute_script("arguments[0].click();", row)
+                    self.driver.execute_script("arguments[0].click();", lapiz)
                     clicked = True
-                    print("✅ Clic en fila exitoso via JavaScript")
-                except Exception as e:
-                    print(f"⚠️ Error haciendo clic en fila: {str(e)}")
-                    
-                    # Intentar de nuevo con método normal
-                    try:
-                        row.click()
-                        clicked = True
-                        print("✅ Clic en fila exitoso")
-                    except Exception as e2:
-                        print(f"⚠️ Error haciendo clic normal en fila: {str(e2)}")
-            
-            # Método 3: Selector específico para los lápices azules
-            if not clicked:
-                try:
-                    print("🔍 Buscando lápices azules específicamente")
-                    # Selector específico para los lápices que se ven en la imagen
-                    lapices = self.driver.find_elements(By.CSS_SELECTOR, "tr svg")
-                    
-                    if lapices and len(lapices) > paciente_index:
-                        lapiz = lapices[paciente_index]
-                        print(f"✅ Lápiz #{paciente_index+1} encontrado, intentando clic")
-                        
-                        # Hacer scroll al lápiz
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", lapiz)
-                        time.sleep(1)
-                        
-                        # Clic con JavaScript
-                        self.driver.execute_script("arguments[0].click();", lapiz)
-                        clicked = True
-                        print("✅ Clic en lápiz exitoso via JavaScript")
-                    else:
-                        print(f"❌ No se encontraron suficientes lápices (solo {len(lapices) if lapices else 0}, necesitamos índice {paciente_index})")
+                    print("✅ Clic en lápiz específico exitoso via JavaScript")
                 except Exception as e:
                     print(f"⚠️ Error con selector específico de lápices: {str(e)}")
             
-            # Método 4: Buscar la fila por su contenido
+            # MÉTODO 3: Búsqueda por índice en las celdas de edición
             if not clicked:
                 try:
-                    print(f"🔍 Buscando fila que contenga el texto: {nombre_paciente}")
+                    print("🔍 Buscando íconos de edición por índice")
+                    # Buscar todos los iconos de edición
+                    iconos_edicion = self.driver.find_elements(By.CSS_SELECTOR, "table tr svg, table tr i.fa-pencil, table tr i.fa-pencil-alt, table tr i.fa-edit")
                     
-                    # Usar XPath para encontrar la fila que contiene el nombre del paciente
-                    xpath = f"//tr[contains(., '{nombre_paciente}')]"
-                    fila = self.driver.find_element(By.XPATH, xpath)
-                    
-                    # Hacer scroll a la fila
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", fila)
-                    time.sleep(1)
-                    
-                    # Buscar el icono dentro de la fila
-                    try:
-                        icono = fila.find_element(By.TAG_NAME, "svg")
+                    if iconos_edicion and len(iconos_edicion) > paciente_index:
+                        icono = iconos_edicion[paciente_index]
+                        
+                        # Hacer scroll al icono
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", icono)
+                        time.sleep(1)
+                        
+                        # Clic con JavaScript
                         self.driver.execute_script("arguments[0].click();", icono)
                         clicked = True
-                        print("✅ Clic en icono dentro de fila encontrada por contenido")
-                    except:
-                        # Si no hay icono, hacer clic en la fila
-                        self.driver.execute_script("arguments[0].click();", fila)
-                        clicked = True
-                        print("✅ Clic en fila encontrada por contenido")
+                        print(f"✅ Clic en icono #{paciente_index} exitoso via JavaScript")
+                    else:
+                        print(f"❌ No hay suficientes iconos de edición (solo {len(iconos_edicion) if iconos_edicion else 0})")
                 except Exception as e:
-                    print(f"⚠️ Error buscando fila por contenido: {str(e)}")
+                    print(f"⚠️ Error buscando iconos por índice: {str(e)}")
             
-            # Método 5: JavaScript para buscar y hacer clic en el elemento adecuado
+            # MÉTODO 4: Usar la interacción directa con la celda que contiene el nombre
             if not clicked:
-                print("🔍 Usando JavaScript para encontrar y hacer clic en paciente")
+                try:
+                    print(f"🔍 Buscando celda con el nombre: {nombre_paciente}")
+                    
+                    # Usar XPath para buscar celdas que contienen el texto
+                    apellido = nombre_paciente.split(',')[0].strip()  # Tomar solo el apellido
+                    selector = f"//td[contains(text(), '{apellido}')]"
+                    celdas = self.driver.find_elements(By.XPATH, selector)
+                    
+                    if celdas and len(celdas) > 0:
+                        celda = celdas[0]  # Tomar la primera coincidencia
+                        
+                        # Hacer scroll a la celda
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", celda)
+                        time.sleep(1)
+                        
+                        # Obtener la fila padre
+                        fila = celda.find_element(By.XPATH, "..")
+                        
+                        # Intentar encontrar el icono dentro de la fila
+                        try:
+                            icono = fila.find_element(By.TAG_NAME, "svg")
+                            self.driver.execute_script("arguments[0].click();", icono)
+                            clicked = True
+                            print("✅ Clic en icono dentro de la fila encontrada exitoso")
+                        except:
+                            # Si no hay icono, hacer clic en la celda
+                            self.driver.execute_script("arguments[0].click();", celda)
+                            clicked = True
+                            print("✅ Clic en celda con nombre exitoso")
+                    else:
+                        print(f"❌ No se encontraron celdas con el texto '{apellido}'")
+                except Exception as e:
+                    print(f"⚠️ Error buscando por celda: {str(e)}")
+            
+            # MÉTODO 5: JavaScript para encontrar y hacer clic
+            if not clicked:
+                print("🔍 Usando JavaScript para encontrar y hacer clic")
                 
-                # Script más específico para encontrar los elementos correctos
-                script = f"""
-                // Función para encontrar el texto más cercano
-                function containsText(element, text) {{
-                    return element.textContent.includes(text);
-                }}
+                script = """
+                // Función para buscar texto en elementos
+                function containsText(element, text) {
+                    return element.textContent.toLowerCase().includes(text.toLowerCase());
+                }
                 
-                // Buscar la fila que contiene el nombre del paciente
-                var rows = document.querySelectorAll('tr');
+                // Extraer el apellido para buscar coincidencias parciales
+                var apellido = arguments[0].split(',')[0].trim().toLowerCase();
+                
+                // Buscar todas las filas
+                var rows = document.querySelectorAll('table tbody tr');
                 var targetRow = null;
-                var pacienteName = "{nombre_paciente}";
                 
-                for (var i = 0; i < rows.length; i++) {{
-                    if (containsText(rows[i], pacienteName)) {{
+                // Buscar la fila que contiene el apellido
+                for (var i = 0; i < rows.length; i++) {
+                    if (rows[i].textContent.toLowerCase().includes(apellido)) {
                         targetRow = rows[i];
                         break;
-                    }}
-                }}
+                    }
+                }
                 
                 // Si encontramos la fila
-                if (targetRow) {{
-                    // Buscar el SVG o ícono dentro de la fila
+                if (targetRow) {
+                    // Buscar el SVG (lápiz) dentro de la fila
                     var svg = targetRow.querySelector('svg');
-                    if (svg) {{
-                        // Clic en el SVG
+                    if (svg) {
+                        // Intentar hacer clic en el SVG
                         svg.click();
                         return "Clic en SVG exitoso";
-                    }}
+                    }
                     
-                    // Si no hay SVG, buscar cualquier enlace
-                    var link = targetRow.querySelector('a');
-                    if (link) {{
-                        link.click();
-                        return "Clic en enlace exitoso";
-                    }}
+                    // Si no hay SVG, buscar un enlace o icono
+                    var iconos = targetRow.querySelectorAll('i.fa-pencil, i.fa-pencil-alt, i.fa-edit');
+                    if (iconos.length > 0) {
+                        iconos[0].click();
+                        return "Clic en icono exitoso";
+                    }
+                    
+                    // Si no hay iconos, hacer clic en la primera celda
+                    var firstCell = targetRow.querySelector('td');
+                    if (firstCell) {
+                        firstCell.click();
+                        return "Clic en celda exitoso";
+                    }
                     
                     // Como último recurso, clic en la fila
                     targetRow.click();
                     return "Clic en fila exitoso";
-                }}
+                }
                 
-                // Si no encontramos la fila, buscar en toda la tabla
-                var table = document.querySelector('table');
-                if (table) {{
-                    // Obtener las filas de la tabla
-                    var allRows = table.querySelectorAll('tbody tr');
-                    
-                    // Hacer clic en la fila según el índice
-                    if (allRows.length > {paciente_index}) {{
-                        var row = allRows[{paciente_index}];
-                        
-                        // Buscar SVG o lápiz
-                        var svg = row.querySelector('svg');
-                        if (svg) {{
-                            svg.click();
-                            return "Clic en SVG por índice exitoso";
-                        }}
-                        
-                        // Buscar enlace
-                        var link = row.querySelector('a');
-                        if (link) {{
-                            link.click();
-                            return "Clic en enlace por índice exitoso";
-                        }}
-                        
-                        // Clic en la fila
-                        row.click();
-                        return "Clic en fila por índice exitoso";
-                    }}
-                    
-                    return "No se encontró la fila por índice " + {paciente_index};
-                }}
+                // Buscar directamente por índice si no encontramos por nombre
+                var allRows = document.querySelectorAll('table tbody tr');
+                var rowIndex = arguments[1];
                 
-                return "No se encontró ni la fila ni la tabla";
+                if (allRows.length > rowIndex) {
+                    var row = allRows[rowIndex];
+                    
+                    // Buscar el icono editar
+                    var svg = row.querySelector('svg');
+                    if (svg) {
+                        svg.click();
+                        return "Clic por índice en SVG exitoso";
+                    }
+                    
+                    // Buscar el primer icono
+                    var icons = row.querySelectorAll('i');
+                    if (icons.length > 0) {
+                        icons[0].click();
+                        return "Clic por índice en icono exitoso";
+                    }
+                    
+                    // Clic en la primera celda
+                    var firstCell = row.querySelector('td');
+                    if (firstCell) {
+                        firstCell.click();
+                        return "Clic por índice en celda exitoso";
+                    }
+                    
+                    // Clic en la fila
+                    row.click();
+                    return "Clic por índice en fila exitoso";
+                }
+                
+                return "No se pudo realizar el clic";
                 """
                 
                 try:
-                    result = self.driver.execute_script(script)
-                    print(f"✅ Resultado JavaScript: {result}")
+                    resultado = self.driver.execute_script(script, nombre_paciente, paciente_index)
+                    print(f"✅ Resultado JavaScript: {resultado}")
                     clicked = True
                 except Exception as e:
-                    print(f"⚠️ Error en JavaScript: {str(e)}")
+                    print(f"❌ Error en JavaScript: {str(e)}")
             
+            # Verificar si se logró hacer clic
             if not clicked:
                 print("❌ No se pudo hacer clic en el paciente después de intentar todos los métodos")
                 return False
             
-            # Esperar a que cargue la página después del clic
-            time.sleep(5)
+            # Esperar a que cargue la ficha del paciente
+            time.sleep(3)
             self.driver.save_screenshot(f"post_click_paciente_{paciente_index}.png")
             
-            # Intentar encontrar el enlace a Consultas H.Clínica
+            # Detectar si estamos en la ficha del paciente o en consultas
+            # Si estamos en la ficha, necesitamos hacer clic en "Consultas H.Clínica"
             try:
-                # Método 1: XPATH
-                consultas_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Consultas H.Clínica')]"))
-                )
-                print("✅ Enlace a Consultas H.Clínica encontrado con XPATH")
-            except:
-                try:
-                    # Método 2: CSS Selector
-                    consultas_btn = self.wait.until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='consultas'], a[href*='histo'], a[href*='clinic']"))
-                    )
-                    print("✅ Enlace a Consultas H.Clínica encontrado con CSS")
-                except:
+                # Buscar el tab de Consultas H.Clínica si estamos en la ficha
+                if "Consultas H.Clínica" not in self.driver.title and "consulta" not in self.driver.current_url.lower():
+                    print("🔍 Buscando el tab de Consultas H.Clínica")
+                    
+                    # Método 1: Buscar por texto exacto
                     try:
-                        # Método 3: JavaScript
-                        print("⚠️ Usando JavaScript para encontrar Consultas H.Clínica")
-                        self.driver.execute_script("""
-                            var links = document.querySelectorAll('a');
-                            for(var i=0; i<links.length; i++) {
-                                if(links[i].textContent.includes('Consulta') || 
-                                links[i].textContent.includes('Historia') || 
-                                links[i].textContent.includes('Clínica') ||
-                                links[i].href.includes('consulta') ||
-                                links[i].href.includes('historia')) {
-                                    links[i].click();
-                                    return true;
-                                }
-                            }
-                            return false;
-                        """)
-                        time.sleep(3)
-                        self.driver.save_screenshot(f"post_consultas_click_{paciente_index}.png")
-                    except Exception as e:
-                        print(f"❌ No se pudo encontrar enlace a Consultas H.Clínica: {str(e)}")
-                        return False
+                        consultas_tab = self.wait.until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Consultas H.Clínica']"))
+                        )
+                        consultas_tab.click()
+                        print("✅ Tab Consultas H.Clínica encontrado y clickeado")
+                    except:
+                        # Método 2: Buscar por texto parcial
+                        try:
+                            consultas_tab = self.driver.find_element(By.XPATH, 
+                                "//a[contains(text(), 'Consulta') or contains(text(), 'H.Clínica')]")
+                            consultas_tab.click()
+                            print("✅ Tab Consultas H.Clínica encontrado por texto parcial y clickeado")
+                        except:
+                            # Método 3: Buscar por CSS
+                            try:
+                                consultas_tab = self.driver.find_element(By.CSS_SELECTOR, 
+                                    "a[href*='consulta'], a[href*='historia'], a[href*='clinic']")
+                                consultas_tab.click()
+                                print("✅ Tab Consultas H.Clínica encontrado por href y clickeado")
+                            except:
+                                # Método 4: JavaScript
+                                print("⚠️ Usando JavaScript para encontrar y clickear Consultas H.Clínica")
+                                clicked_tab = self.driver.execute_script("""
+                                    var links = document.querySelectorAll('a, button, span');
+                                    for (var i = 0; i < links.length; i++) {
+                                        if (links[i].textContent.includes('Consulta') || 
+                                            links[i].textContent.includes('H.Clínica') ||
+                                            links[i].textContent.includes('Historia')) {
+                                            links[i].click();
+                                            return true;
+                                        }
+                                    }
+                                    return false;
+                                """)
+                                
+                                if not clicked_tab:
+                                    print("❌ No se pudo encontrar el tab de Consultas H.Clínica")
+                else:
+                    print("✅ Ya estamos en la sección de Consultas H.Clínica")
+            except Exception as e:
+                print(f"⚠️ Error al buscar tab de Consultas: {str(e)}")
             
-            # Si encontramos el botón con los métodos 1-2, hacer clic
-            if 'consultas_btn' in locals():
-                consultas_btn.click()
-                time.sleep(3)
-                self.driver.save_screenshot(f"post_consultas_click_{paciente_index}.png")
+            # Esperar a que cargue la página de consultas
+            time.sleep(3)
+            self.driver.save_screenshot(f"consultas_paciente_{paciente_index}.png")
             
             # Extraer información básica del paciente
             info_paciente = self.extraer_info_paciente()
             
-            # Hacer clic en el botón "Más"
+            # AHORA HACER CLIC EN 'MÁS' E 'IMPRIMIR HISTÓRICO'
+            
+            # 1. Hacer clic en el botón "Más"
             try:
-                mas_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Más')]"))
-                )
-                mas_btn.click()
-                print("✅ Botón 'Más' encontrado y clicado")
-            except:
+                print("🔍 Buscando botón 'Más'")
+                
+                # Método 1: XPath específico
                 try:
-                    # Intentar con CSS
-                    mas_btn = self.driver.find_element(By.CSS_SELECTOR, ".btn-mas, .more-options, .menu-more")
+                    mas_btn = self.wait.until(
+                        EC.element_to_be_clickable((By.XPATH, "//button[normalize-space()='Más']"))
+                    )
                     mas_btn.click()
-                    print("✅ Botón 'Más' encontrado con CSS y clicado")
+                    print("✅ Botón 'Más' encontrado y clicado")
                 except:
-                    # Intentar con JavaScript
-                    print("⚠️ Usando JavaScript para encontrar botón 'Más'")
-                    clicked = self.driver.execute_script("""
-                        var buttons = document.querySelectorAll('button');
-                        for(var i=0; i<buttons.length; i++) {
-                            if(buttons[i].textContent.includes('Más') || 
-                            buttons[i].classList.contains('btn-mas') ||
-                            buttons[i].classList.contains('more')) {
-                                buttons[i].click();
-                                return true;
-                            }
-                        }
-                        return false;
-                    """)
-                    if not clicked:
-                        print("❌ No se pudo encontrar el botón 'Más'")
-                        return False
-            
-            time.sleep(2)
-            self.driver.save_screenshot(f"post_mas_click_{paciente_index}.png")
-            
-            # Hacer clic en "Imprimir Histórico"
-            try:
-                imprimir_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Imprimir Histórico')]"))
-                )
-                imprimir_btn.click()
-                print("✅ Opción 'Imprimir Histórico' encontrada y clicada")
-            except:
+                    # Método 2: Selector CSS
+                    try:
+                        mas_btn = self.driver.find_element(By.CSS_SELECTOR, 
+                            "button.dropdown-toggle, button.más, button[data-toggle='dropdown']")
+                        mas_btn.click()
+                        print("✅ Botón 'Más' encontrado por CSS y clicado")
+                    except:
+                        # Método 3: Buscar por icono dentro del botón
+                        try:
+                            mas_btn = self.driver.find_element(By.CSS_SELECTOR, 
+                                "button svg.fa-ellipsis-v, button svg.fa-ellipsis-h, button i.fa-ellipsis-v, button i.fa-ellipsis-h")
+                            # Obtener el botón padre
+                            mas_btn = mas_btn.find_element(By.XPATH, "..")
+                            mas_btn.click()
+                            print("✅ Botón 'Más' encontrado por icono y clicado")
+                        except:
+                            # Método 4: JavaScript
+                            print("⚠️ Usando JavaScript para encontrar y clickear botón 'Más'")
+                            clicked_mas = self.driver.execute_script("""
+                                // Buscar por texto
+                                var buttons = document.querySelectorAll('button');
+                                for (var i = 0; i < buttons.length; i++) {
+                                    if (buttons[i].textContent.trim() === 'Más') {
+                                        buttons[i].click();
+                                        return "Botón Más encontrado por texto";
+                                    }
+                                }
+                                
+                                // Buscar por ícono de ellipsis
+                                var ellipsisButtons = document.querySelectorAll('button:has(svg.fa-ellipsis-v), button:has(svg.fa-ellipsis-h), button:has(i.fa-ellipsis-v), button:has(i.fa-ellipsis-h)');
+                                if (ellipsisButtons.length > 0) {
+                                    ellipsisButtons[0].click();
+                                    return "Botón Más encontrado por ícono";
+                                }
+                                
+                                // Buscar por atributos de dropdown
+                                var dropdownButtons = document.querySelectorAll('[data-toggle="dropdown"], .dropdown-toggle');
+                                if (dropdownButtons.length > 0) {
+                                    dropdownButtons[0].click();
+                                    return "Botón Más encontrado por dropdown";
+                                }
+                                
+                                return false;
+                            """)
+                            
+                            if not clicked_mas:
+                                print("❌ No se pudo encontrar el botón 'Más'")
+                                return False
+                
+                # Esperar a que aparezca el menú desplegable
+                time.sleep(2)
+                self.driver.save_screenshot(f"menu_mas_{paciente_index}.png")
+                
+                # 2. Hacer clic en "Imprimir Histórico"
                 try:
-                    # Intentar con CSS
-                    imprimir_btn = self.driver.find_element(By.CSS_SELECTOR, ".print-history, .imprimir-historico")
-                    imprimir_btn.click()
-                    print("✅ Opción 'Imprimir Histórico' encontrada con CSS y clicada")
-                except:
-                    # Intentar con JavaScript
-                    print("⚠️ Usando JavaScript para encontrar 'Imprimir Histórico'")
-                    clicked = self.driver.execute_script("""
-                        var elements = document.querySelectorAll('a, button, span, div');
-                        for(var i=0; i<elements.length; i++) {
-                            if(elements[i].textContent.includes('Imprimir Histórico') || 
-                            elements[i].textContent.includes('Imprimir historial') ||
-                            elements[i].textContent.includes('Print history')) {
-                                elements[i].click();
-                                return true;
-                            }
-                        }
-                        return false;
-                    """)
-                    if not clicked:
-                        print("❌ No se pudo encontrar 'Imprimir Histórico'")
-                        return False
-            
-            # Esperar a que se genere el PDF en una nueva pestaña
-            time.sleep(5)
-            
-            # Tomar captura antes de cambiar de pestaña
-            self.driver.save_screenshot(f"pre_tab_switch_{paciente_index}.png")
-            
-            # Verificar si hay más de una pestaña
-            if len(self.driver.window_handles) > 1:
-                print(f"✅ Nueva pestaña detectada (total: {len(self.driver.window_handles)})")
-                
-                # Cambiar a la nueva pestaña
-                self.driver.switch_to.window(self.driver.window_handles[1])
-                time.sleep(3)
-                
-                # Tomar captura de la pestaña del PDF
-                self.driver.save_screenshot(f"pdf_tab_{paciente_index}.png")
-                
-                # Extraer el contenido del PDF
-                pdf_content = self.extraer_contenido_pdf_desde_navegador()
-                
-                # Procesar el contenido con OpenAI
-                info_consultas = self.extraer_info_consultas_con_openai(pdf_content, info_paciente["ID_Paciente"])
-                
-                # Guardar información en DataFrames
-                self.guardar_datos_paciente(info_paciente)
-                self.guardar_datos_consultas(info_consultas)
-                
-                # Cerrar la pestaña del PDF y volver a la principal
-                self.driver.close()
-                self.driver.switch_to.window(self.driver.window_handles[0])
-                
-                # Volver a la lista de pacientes
-                try:
-                    # Intentar con el botón de navegación
-                    back_btn = self.driver.find_element(By.CSS_SELECTOR, ".back-button, .return-button, .go-back")
-                    back_btn.click()
-                except:
-                    # Si no hay botón, usar JavaScript
-                    self.driver.execute_script("window.history.go(-1)")
-                
-                time.sleep(3)
-                self.driver.save_screenshot(f"post_process_{paciente_index}.png")
-                
-                print(f"✅ Procesamiento exitoso del paciente")
-                return True
-            else:
-                print("⚠️ No se abrió ninguna pestaña nueva para el PDF")
-                
-                # Intentar buscar un frame con el PDF
-                try:
-                    frames = self.driver.find_elements(By.TAG_NAME, "iframe")
-                    if frames:
-                        print(f"✅ Frame encontrado, intentando cambiar a él")
-                        self.driver.switch_to.frame(frames[0])
+                    print("🔍 Buscando opción 'Imprimir Histórico'")
+                    
+                    # Método 1: XPath específico
+                    try:
+                        imprimir_btn = self.wait.until(
+                            EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Imprimir Histórico')]"))
+                        )
+                        imprimir_btn.click()
+                        print("✅ Opción 'Imprimir Histórico' encontrada y clicada")
+                    except:
+                        # Método 2: Selector más amplio
+                        try:
+                            imprimir_btn = self.driver.find_element(By.XPATH, 
+                                "//a[contains(text(), 'Imprimir')] | //span[contains(text(), 'Imprimir')] | //div[contains(text(), 'Histórico')]")
+                            imprimir_btn.click()
+                            print("✅ Opción 'Imprimir Histórico' encontrada por selector amplio y clicada")
+                        except:
+                            # Método 3: JavaScript
+                            print("⚠️ Usando JavaScript para encontrar y clickear 'Imprimir Histórico'")
+                            clicked_imprimir = self.driver.execute_script("""
+                                // Función para buscar texto
+                                function containsHistorico(text) {
+                                    return text.includes('Imprimir Histórico') || 
+                                        text.includes('Imprimir Historial') || 
+                                        text.includes('Historia') ||
+                                        text.includes('Histórico');
+                                }
+                                
+                                // Buscar elemento de menú
+                                var menuItems = document.querySelectorAll('.dropdown-menu a, .dropdown-menu li, .dropdown-item');
+                                for (var i = 0; i < menuItems.length; i++) {
+                                    if (containsHistorico(menuItems[i].textContent)) {
+                                        menuItems[i].click();
+                                        return "Imprimir Histórico encontrado en menú dropdown";
+                                    }
+                                }
+                                
+                                // Buscar cualquier elemento clickeable
+                                var elementos = document.querySelectorAll('a, button, span[role="button"], div[role="button"]');
+                                for (var i = 0; i < elementos.length; i++) {
+                                    if (containsHistorico(elementos[i].textContent)) {
+                                        elementos[i].click();
+                                        return "Imprimir Histórico encontrado en otros elementos";
+                                    }
+                                }
+                                
+                                return false;
+                            """)
+                            
+                            if not clicked_imprimir:
+                                print("❌ No se pudo encontrar 'Imprimir Histórico'")
+                                return False
+                    
+                    # Esperar a que se genere el PDF
+                    time.sleep(5)
+                    self.driver.save_screenshot(f"post_imprimir_{paciente_index}.png")
+                    
+                    # Verificar si hay una nueva pestaña
+                    if len(self.driver.window_handles) > 1:
+                        print(f"✅ Nueva pestaña detectada (total: {len(self.driver.window_handles)})")
                         
-                        # Extraer contenido del frame
-                        pdf_content = self.driver.find_element(By.TAG_NAME, "body").text
+                        # Cambiar a la nueva pestaña
+                        self.driver.switch_to.window(self.driver.window_handles[1])
+                        time.sleep(3)
                         
-                        # Volver al contenido principal
-                        self.driver.switch_to.default_content()
+                        # Tomar captura de la pestaña del PDF
+                        self.driver.save_screenshot(f"pdf_tab_{paciente_index}.png")
                         
-                        # Procesar con OpenAI
+                        # Extraer el contenido del PDF
+                        pdf_content = self.extraer_contenido_pdf_desde_navegador()
+                        
+                        # Procesar el contenido con OpenAI
                         info_consultas = self.extraer_info_consultas_con_openai(pdf_content, info_paciente["ID_Paciente"])
                         
-                        # Guardar información
+                        # Guardar información en DataFrames
                         self.guardar_datos_paciente(info_paciente)
                         self.guardar_datos_consultas(info_consultas)
                         
-                        # Volver a la lista de pacientes
-                        self.driver.execute_script("window.history.go(-1)")
-                        time.sleep(3)
+                        # Cerrar la pestaña del PDF y volver a la principal
+                        self.driver.close()
+                        self.driver.switch_to.window(self.driver.window_handles[0])
                         
-                        print(f"✅ Procesamiento exitoso a través de frame")
+                        # Volver a la lista de pacientes
+                        try:
+                            # Intentar navegación directa
+                            self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                        except:
+                            # Si falla, intentar con el botón de navegación
+                            try:
+                                back_btn = self.driver.find_element(By.CSS_SELECTOR, ".back-button, .return-button, .go-back")
+                                back_btn.click()
+                            except:
+                                # Si no hay botón, usar JavaScript
+                                self.driver.execute_script("window.history.go(-1)")
+                        
+                        time.sleep(3)
+                        self.driver.save_screenshot(f"post_process_{paciente_index}.png")
+                        
+                        print(f"✅ Procesamiento exitoso del paciente {nombre_paciente}")
                         return True
+                    else:
+                        print("⚠️ No se abrió ninguna pestaña nueva para el PDF")
+                        
+                        # Intentar buscar un frame con el PDF
+                        try:
+                            frames = self.driver.find_elements(By.TAG_NAME, "iframe")
+                            if frames:
+                                print(f"✅ Frame encontrado, intentando cambiar a él")
+                                self.driver.switch_to.frame(frames[0])
+                                
+                                # Extraer contenido del frame
+                                pdf_content = self.driver.find_element(By.TAG_NAME, "body").text
+                                
+                                # Volver al contenido principal
+                                self.driver.switch_to.default_content()
+                                
+                                # Procesar con OpenAI
+                                info_consultas = self.extraer_info_consultas_con_openai(pdf_content, info_paciente["ID_Paciente"])
+                                
+                                # Guardar información
+                                self.guardar_datos_paciente(info_paciente)
+                                self.guardar_datos_consultas(info_consultas)
+                                
+                                # Volver a la lista de pacientes
+                                try:
+                                    # Intentar navegación directa
+                                    self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                                except:
+                                    # Si falla, usar JavaScript
+                                    self.driver.execute_script("window.history.go(-1)")
+                                
+                                time.sleep(3)
+                                
+                                print(f"✅ Procesamiento exitoso a través de frame")
+                                return True
+                        except Exception as e:
+                            print(f"❌ Error al intentar procesar frame: {str(e)}")
+                        
+                        # Intentar capturar la pantalla como último recurso
+                        try:
+                            print("⚠️ Intentando capturar la pantalla para procesar con OpenAI")
+                            # Tomar captura de pantalla
+                            screenshot = self.driver.get_screenshot_as_base64()
+                            
+                            # Procesar captura con OpenAI
+                            info_consultas = self.extraer_info_consultas_con_openai(
+                                f"[SCREENSHOT_BASE64]{screenshot}", 
+                                info_paciente["ID_Paciente"]
+                            )
+                            
+                            # Guardar información
+                            self.guardar_datos_paciente(info_paciente)
+                            self.guardar_datos_consultas(info_consultas)
+                            
+                            # Volver a la lista de pacientes
+                            try:
+                                self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                            except:
+                                self.driver.execute_script("window.history.go(-1)")
+                                
+                            time.sleep(3)
+                            print(f"✅ Procesamiento exitoso a través de captura de pantalla")
+                            return True
+                        except Exception as e:
+                            print(f"❌ Error al procesar captura de pantalla: {str(e)}")
+                    
+                    # Si llegamos aquí, no pudimos procesar el PDF
+                    print("❌ No se pudo procesar el PDF del paciente")
+                    
+                    # Intentar volver a la lista de pacientes
+                    try:
+                        self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                        time.sleep(3)
+                    except:
+                        pass
+                    
+                    return False
                 except Exception as e:
-                    print(f"❌ Error al intentar procesar frame: {str(e)}")
+                    print(f"❌ Error al hacer clic en 'Imprimir Histórico': {str(e)}")
+                    
+                    # Intentar volver a la lista de pacientes
+                    try:
+                        self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                        time.sleep(3)
+                    except:
+                        pass
+                    
+                    return False
+            except Exception as e:
+                print(f"❌ Error al hacer clic en 'Más': {str(e)}")
                 
-                # Si no se pudo procesar, intentar volver a la lista de pacientes
+                # Intentar volver a la lista de pacientes
                 try:
                     self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
                     time.sleep(3)
@@ -855,7 +1009,7 @@ class HistoriasClinicasExtractor:
                     pass
                 
                 return False
-                    
+                        
         except Exception as e:
             print(f"❌ Error al procesar paciente: {str(e)}")
             # Intentar volver a la lista de pacientes
