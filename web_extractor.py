@@ -1,4 +1,5 @@
 import os
+import csv
 import time
 import json
 import pandas as pd
@@ -413,14 +414,24 @@ class HistoriasClinicasExtractor:
                     print("✅ Nueva pestaña detectada")
                     self.driver.switch_to.window(self.driver.window_handles[1])
                     time.sleep(3)
-                    self.driver.save_screenshot(f"pdf_tab_{paciente_index}.png")
 
-                    pdf_content = self.extraer_contenido_pdf_desde_navegador()
-                    info_paciente = self.extraer_info_paciente()
-                    info_consultas = self.extraer_info_consultas_con_openai(pdf_content, info_paciente["ID_Paciente"])
+                    # Intentar extraer texto del PDF (si es posible)
+                    try:
+                        texto_pdf = self.driver.find_element(By.TAG_NAME, 'body').text
+                    except:
+                        texto_pdf = ""
 
-                    self.guardar_datos_paciente(info_paciente)
-                    self.guardar_datos_consultas(info_consultas)
+                    screenshot_path = f"pdf_tab_{paciente_index}.png"
+                    self.driver.save_screenshot(screenshot_path)
+
+                    print("🧠 Procesando contenido con OpenAI (texto o imagen)...")
+                    resultado = self.extraer_info_clinica_openai(pdf_text=texto_pdf, fallback_image_path=screenshot_path)
+
+                    if resultado:
+                        paciente = resultado.get("paciente", {})
+                        consultas = resultado.get("consultas", [])
+                        self.guardar_datos_paciente(paciente)
+                        self.guardar_datos_consultas(consultas)
 
                     self.driver.close()
                     self.driver.switch_to.window(self.driver.window_handles[0])
@@ -448,249 +459,61 @@ class HistoriasClinicasExtractor:
                 pass
             return False
 
-
+    def extraer_contenido_pdf_desde_navegador(self):
+        try:
+            print("📄 Intentando extraer texto del PDF desde el navegador...")
+            body_text = self.driver.find_element(By.TAG_NAME, 'body').text
+            if body_text and len(body_text.strip()) > 500:
+                print("✅ Texto extraído del PDF")
+                return body_text
+            else:
+                print("⚠️ Texto del PDF es muy corto o vacío")
+                return ""
+        except Exception as e:
+            print(f"❌ Error extrayendo texto del PDF: {str(e)}")
+            return ""
 
     def extraer_info_paciente(self):
-        """Extrae información básica del paciente desde la ficha"""
+        print("🧪 Método extraer_info_paciente ya no se usa directamente. Toda la info del paciente ahora se extrae con OpenAI.")
+        return {}
+
+    def extraer_info_consultas_con_openai(self, texto, id_paciente):
+        print("🧪 Método extraer_info_consultas_con_openai ha sido reemplazado por extraer_info_clinica_openai. No se usa directamente.")
+        return []
+
+    
+    def guardar_datos_paciente(self, paciente_dict):
+        archivo = os.path.join("datos_extraidos", "pacientes.csv")
+        campos = ["ID Paciente", "Nombre", "Edad", "Fecha"]
+        os.makedirs("datos_extraidos", exist_ok=True)
+
         try:
-            # Esperar a que cargue la ficha
-            time.sleep(2)
-            
-            # Extraer nombre del paciente del encabezado
-            nombre_completo = self.driver.find_element(By.CSS_SELECTOR, ".cabecera-ficha h2").text
-            
-            # Extraer otros datos (esto puede variar según la estructura)
-            # Intentar obtener fecha de nacimiento si está visible
-            fecha_nacimiento = ""
-            try:
-                fecha_elemento = self.driver.find_element(By.XPATH, "//label[contains(text(), 'Fecha nacimiento')]/following-sibling::div")
-                fecha_nacimiento = fecha_elemento.text
-            except:
-                pass
-                
-            # Generar un ID único para el paciente (basado en su nombre)
-            id_paciente = ''.join(filter(str.isalnum, nombre_completo)).lower()
-            
-            # Intentar obtener edad si está visible
-            edad = ""
-            try:
-                edad_elemento = self.driver.find_element(By.XPATH, "//label[contains(text(), 'Edad')]/following-sibling::div")
-                edad = edad_elemento.text.replace("años", "").strip()
-            except:
-                pass
-            
-            return {
-                "Paciente": nombre_completo,
-                "Fecha": fecha_nacimiento,
-                "ID_Paciente": id_paciente,
-                "Edad": edad
-            }
-            
+            escribir_encabezado = not os.path.exists(archivo)
+            with open(archivo, mode="a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=campos)
+                if escribir_encabezado:
+                    writer.writeheader()
+                writer.writerow({k: paciente_dict.get(k, "") for k in campos})
+            print("✅ Datos del paciente guardados")
         except Exception as e:
-            print(f"❌ Error al extraer información del paciente: {str(e)}")
-            return {
-                "Paciente": "Desconocido",
-                "Fecha": "",
-                "ID_Paciente": f"unknown_{int(time.time())}",
-                "Edad": ""
-            }
-    
-    def extraer_contenido_pdf_desde_navegador(self):
-        """Extrae el contenido del PDF mostrado en el navegador"""
+            print(f"❌ Error guardando datos del paciente: {str(e)}")
+
+    def guardar_datos_consultas(self, lista_consultas):
+        archivo = os.path.join("datos_extraidos", "consultas.csv")
+        campos = [
+            "ID Paciente", "No Consulta", "Tabaquismo", "Diabetes", 
+            "PSA", "Presion Arterial", "Diagnostico", "Tratamiento"
+        ]
+        os.makedirs("datos_extraidos", exist_ok=True)
+
         try:
-            # Esperar a que el PDF se cargue
-            time.sleep(3)
-            
-            # Intentar capturar el PDF como texto
-            pdf_text = self.driver.find_element(By.TAG_NAME, 'body').text
-            
-            # Si no hay texto significativo, intentar extraer con captura de pantalla
-            if len(pdf_text.strip()) < 100:
-                print("⚠️ El texto extraído del PDF es muy corto, se intentará capturar la pantalla")
-                screenshot = self.driver.get_screenshot_as_base64()
-                return f"[SCREENSHOT_BASE64]{screenshot}"
-            
-            return pdf_text
-            
+            escribir_encabezado = not os.path.exists(archivo)
+            with open(archivo, mode="a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=campos)
+                if escribir_encabezado:
+                    writer.writeheader()
+                for consulta in lista_consultas:
+                    writer.writerow({k: consulta.get(k, "") for k in campos})
+            print("✅ Consultas guardadas correctamente")
         except Exception as e:
-            print(f"❌ Error al extraer contenido del PDF: {str(e)}")
-            # Intentar tomar una captura de pantalla como alternativa
-            try:
-                screenshot = self.driver.get_screenshot_as_base64()
-                return f"[SCREENSHOT_BASE64]{screenshot}"
-            except:
-                return "Error: No se pudo extraer el contenido del PDF"
-    
-    def extraer_info_consultas_con_openai(self, texto_pdf, id_paciente):
-        """Utiliza OpenAI para extraer información estructurada de las consultas"""
-        print("🧠 Procesando información con OpenAI...")
-        
-        # Verificar si el contenido es una captura de pantalla
-        if texto_pdf.startswith("[SCREENSHOT_BASE64]"):
-            # Extraer la imagen base64
-            imagen_base64 = texto_pdf.replace("[SCREENSHOT_BASE64]", "")
-            
-            prompt = """
-            Extrae la siguiente información de esta captura de pantalla de una historia clínica:
-            - Número de consulta o fecha de la consulta
-            - Información sobre tabaquismo (SI/NO)
-            - Información sobre diabetes (SI/NO)
-            - Valor de PSA (si existe)
-            - Presión arterial (si existe)
-            - Diagnóstico (si existe)
-            - Tratamiento indicado (si existe)
-            
-            Organiza la información para cada consulta encontrada en formato JSON:
-            [
-                {
-                    "No_Consulta": "fecha o número",
-                    "Tabaquismo": "SI/NO",
-                    "Diabetes": "SI/NO",
-                    "PSA": "valor",
-                    "Presion_Arterial": "valor",
-                    "Diagnostico": "texto",
-                    "Tratamiento": "texto"
-                }
-            ]
-            """
-            
-            try:
-                response = openai.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "user", "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {
-                                "url": f"data:image/png;base64,{imagen_base64}"
-                            }}
-                        ]}
-                    ],
-                    max_tokens=1500
-                )
-                
-                content = response.choices[0].message.content
-                
-                # Intentar extraer JSON de la respuesta
-                try:
-                    # Buscar patrón de JSON en la respuesta
-                    json_match = re.search(r'(\[.*\])', content, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(1)
-                        consultas = json.loads(json_str)
-                    else:
-                        consultas = []
-                        
-                    # Añadir ID_Paciente a cada consulta
-                    for consulta in consultas:
-                        consulta["ID_Paciente"] = id_paciente
-                        
-                    return consultas
-                except Exception as e:
-                    print(f"❌ Error al procesar JSON de OpenAI: {str(e)}")
-                    return []
-                
-            except Exception as e:
-                print(f"❌ Error en la API de OpenAI: {str(e)}")
-                return []
-        else:
-            # Procesar texto plano
-            prompt = f"""
-            Extrae la siguiente información de esta historia clínica:
-            
-            {texto_pdf[:4000]}  # Limitado a 4000 caracteres para no exceder límites de token
-            
-            Información a extraer para cada consulta encontrada:
-            - Número de consulta o fecha de la consulta
-            - Información sobre tabaquismo (SI/NO)
-            - Información sobre diabetes (SI/NO)
-            - Valor de PSA (si existe)
-            - Presión arterial (si existe)
-            - Diagnóstico (si existe)
-            - Tratamiento indicado (si existe)
-            
-            Organiza la información para cada consulta encontrada en formato JSON:
-            [
-                {{
-                    "No_Consulta": "fecha o número",
-                    "Tabaquismo": "SI/NO",
-                    "Diabetes": "SI/NO",
-                    "PSA": "valor",
-                    "Presion_Arterial": "valor",
-                    "Diagnostico": "texto",
-                    "Tratamiento": "texto"
-                }}
-            ]
-            """
-            
-            try:
-                response = openai.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=1500
-                )
-                
-                content = response.choices[0].message.content
-                
-                # Intentar extraer JSON de la respuesta
-                try:
-                    # Buscar patrón de JSON en la respuesta
-                    json_match = re.search(r'(\[.*\])', content, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(1)
-                        consultas = json.loads(json_str)
-                    else:
-                        consultas = []
-                        
-                    # Añadir ID_Paciente a cada consulta
-                    for consulta in consultas:
-                        consulta["ID_Paciente"] = id_paciente
-                        
-                    return consultas
-                except Exception as e:
-                    print(f"❌ Error al procesar JSON de OpenAI: {str(e)}")
-                    return []
-                
-            except Exception as e:
-                print(f"❌ Error en la API de OpenAI: {str(e)}")
-                return []
-    
-    def guardar_datos_paciente(self, info_paciente):
-        """Guarda los datos del paciente en el DataFrame"""
-        try:
-            self.pacientes_df = pd.concat([
-                self.pacientes_df, 
-                pd.DataFrame([info_paciente])
-            ], ignore_index=True)
-            
-            # Guardar CSV después de cada actualización
-            self.pacientes_df.to_csv(self.pacientes_csv, index=False)
-            print(f"✅ Datos del paciente guardados (Total: {len(self.pacientes_df)})")
-        except Exception as e:
-            print(f"❌ Error al guardar datos del paciente: {str(e)}")
-    
-    def guardar_datos_consultas(self, consultas):
-        """Guarda los datos de consultas en el DataFrame"""
-        try:
-            if consultas:
-                self.consultas_df = pd.concat([
-                    self.consultas_df, 
-                    pd.DataFrame(consultas)
-                ], ignore_index=True)
-                
-                # Guardar CSV después de cada actualización
-                self.consultas_df.to_csv(self.consultas_csv, index=False)
-                print(f"✅ Datos de consultas guardados (Total: {len(self.consultas_df)})")
-            else:
-                print("⚠️ No se encontraron consultas para guardar")
-        except Exception as e:
-            print(f"❌ Error al guardar datos de consultas: {str(e)}")
-    
-    def cerrar(self):
-        """Cierra el navegador y finaliza la extracción"""
-        try:
-            self.driver.quit()
-            print("👋 Navegador cerrado correctamente")
-        except:
-            print("⚠️ Error al cerrar el navegador")
+            print(f"❌ Error guardando consultas: {str(e)}")
