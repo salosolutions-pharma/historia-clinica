@@ -401,7 +401,7 @@ class HistoriasClinicasExtractor:
 
                 print("🔍 Buscando opción 'Imprimir Histórico'")
                 imprimir_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Imprimir Histórico')]"))
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Imprimir Histórico')]"))
                 )
                 imprimir_btn.click()
                 print("✅ Opción 'Imprimir Histórico' clicada")
