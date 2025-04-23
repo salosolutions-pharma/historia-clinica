@@ -309,37 +309,36 @@ class HistoriasClinicasExtractor:
                 return False
     
     def obtener_lista_pacientes(self):
-        print("📋 Obteniendo lista de pacientes...")
+        print("📋 Obteniendo lista de pacientes desde el HTML...")
+        lista_pacientes = []
         try:
-            time.sleep(7)
-            self.driver.save_screenshot("pacientes_list.png")
+            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "datatable-row-wrapper")))
+            filas = self.driver.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
 
-            # Como se definió, usaremos coordenadas fijas según el orden visual
-            pacientes_coords = [
-                {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO", "coords": {"x": 56, "y": 470}},
-                {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL", "coords": {"x": 56, "y": 520}},
-                {"index": 2, "nombre": "VILLANUEVA, LEOPOLDO", "coords": {"x": 56, "y": 570}}
-            ]
+            for index, fila in enumerate(filas):
+                try:
+                    celda = fila.find_element(By.CSS_SELECTOR, "datatable-body-cell")
+                    nombre = celda.text.strip()
+                    if nombre:
+                        lista_pacientes.append({"index": index, "nombre": nombre})
+                        print(f"✅ Paciente encontrado: {nombre}")
+                except Exception as e:
+                    print(f"⚠️ Error leyendo fila {index}: {str(e)}")
 
-            print(f"✅ Coordenadas de pacientes generadas manualmente")
-            return pacientes_coords
+            print(f"✅ Total pacientes encontrados: {len(lista_pacientes)}")
+            return lista_pacientes
 
         except Exception as e:
             print(f"❌ Error al obtener lista de pacientes: {str(e)}")
             return []
 
-    
     def procesar_paciente(self, paciente_info):
-        from selenium.webdriver.common.action_chains import ActionChains
-
         if isinstance(paciente_info, dict):
             paciente_index = paciente_info.get('index', 0)
             nombre_paciente = paciente_info.get('nombre', f"Paciente #{paciente_index+1}")
-            coords = paciente_info.get('coords', None)
         else:
             paciente_index = paciente_info
             nombre_paciente = f"Paciente #{paciente_index+1}"
-            coords = None
 
         print(f"\U0001F464 Procesando paciente: {nombre_paciente}...")
 
@@ -347,78 +346,62 @@ class HistoriasClinicasExtractor:
             self.driver.save_screenshot(f"pre_click_paciente_{paciente_index}.png")
             clicked = False
 
-            # MÉTODO 1: Clic por coordenadas en el lápiz azul o nombre
-            if coords:
-                try:
-                    print(f"📍 Clic por coordenadas: ({coords['x']}, {coords['y']})")
-                    actions = ActionChains(self.driver)
-                    actions.move_by_offset(coords["x"], coords["y"]).click().perform()
-                    clicked = True
-                    print("✅ Clic por coordenadas exitoso")
-                except Exception as e:
-                    print(f"❌ Error haciendo clic por coordenadas: {str(e)}")
+            # MÉTODO: Clic por contenido HTML
+            try:
+                print("🔍 Buscando fila del paciente por HTML...")
+                nombre_limpio = nombre_paciente.lower().replace(",", "").strip()
+                filas = self.driver.find_elements(By.CSS_SELECTOR, "datatable-row-wrapper")
+                for fila in filas:
+                    try:
+                        celda = fila.find_element(By.CSS_SELECTOR, "datatable-body-cell")
+                        texto = celda.text.lower().replace(",", "").strip()
+                        if nombre_limpio in texto:
+                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", celda)
+                            time.sleep(1)
+                            celda.click()
+                            print(f"✅ Clic exitoso sobre {texto}")
+                            clicked = True
+                            break
+                    except Exception as e:
+                        print(f"⚠️ Error leyendo celda: {str(e)}")
+            except Exception as e:
+                print(f"❌ No se pudo buscar por HTML: {str(e)}")
 
             if not clicked:
-                print("❌ No se pudo hacer clic en el paciente por coordenadas")
+                print("❌ No se pudo hacer clic en el paciente por HTML")
                 return False
 
             time.sleep(3)
             self.driver.save_screenshot(f"post_click_paciente_{paciente_index}.png")
 
-            # Ir a pestaña de Consultas H.Clínica si no lo redirigió automáticamente
+            # Ir a pestaña de Consultas H.Clínica
             try:
-                if "Consultas H.Clínica" not in self.driver.title and "consulta" not in self.driver.current_url.lower():
-                    print("\U0001F50D Buscando el tab de Consultas H.Clínica")
-                    try:
-                        consultas_tab = self.wait.until(
-                            EC.element_to_be_clickable((By.XPATH, "//a[normalize-space()='Consultas H.Clínica']"))
-                        )
-                        consultas_tab.click()
-                        print("✅ Tab Consultas H.Clínica encontrado y clickeado")
-                    except:
-                        try:
-                            consultas_tab = self.driver.find_element(By.XPATH,
-                                "//a[contains(text(), 'Consulta') or contains(text(), 'H.Clínica')]")
-                            consultas_tab.click()
-                            print("✅ Tab Consultas H.Clínica encontrado por texto parcial y clickeado")
-                        except:
-                            print("⚠️ Usando JavaScript para hacer clic en Consultas H.Clínica")
-                            clicked_tab = self.driver.execute_script("""
-                                var links = document.querySelectorAll('a, button, span');
-                                for (var i = 0; i < links.length; i++) {
-                                    if (links[i].textContent.includes('Consulta') || 
-                                        links[i].textContent.includes('H.Clínica') ||
-                                        links[i].textContent.includes('Historia')) {
-                                        links[i].click();
-                                        return true;
-                                    }
-                                }
-                                return false;
-                            """)
-                            if not clicked_tab:
-                                print("❌ No se pudo encontrar el tab de Consultas H.Clínica")
+                print("🔍 Buscando el tab de Consultas H.Clínica")
+                consultas_tab = self.wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Consultas H.Clínica')]"))
+                )
+                consultas_tab.click()
+                print("✅ Tab Consultas H.Clínica clickeado")
             except Exception as e:
-                print(f"⚠️ Error al buscar tab de Consultas: {str(e)}")
+                print(f"❌ No se pudo encontrar el tab de Consultas H.Clínica: {str(e)}")
+                return False
 
             time.sleep(3)
-            self.driver.save_screenshot(f"consultas_paciente_{paciente_index}.png")
-
-            info_paciente = self.extraer_info_paciente()
+            self.driver.save_screenshot(f"consultas_tab_{paciente_index}.png")
 
             # Procesar sección 'Más' y 'Imprimir Histórico'
             try:
-                print("\U0001F50D Buscando botón 'Más'")
+                print("🔍 Buscando botón 'Más'")
                 mas_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[normalize-space()='Más']"))
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Más')]"))
                 )
                 mas_btn.click()
                 print("✅ Botón 'Más' clicado")
-                time.sleep(2)
-                self.driver.save_screenshot(f"menu_mas_{paciente_index}.png")
+                time.sleep(1)
 
-                print("\U0001F50D Buscando opción 'Imprimir Histórico'")
+                print("🔍 Buscando opción 'Imprimir Histórico'")
                 imprimir_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Imprimir Histórico')]"))
+                    EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Imprimir Histórico')]"))
                 )
                 imprimir_btn.click()
                 print("✅ Opción 'Imprimir Histórico' clicada")
@@ -427,12 +410,13 @@ class HistoriasClinicasExtractor:
                 self.driver.save_screenshot(f"post_imprimir_{paciente_index}.png")
 
                 if len(self.driver.window_handles) > 1:
-                    print(f"✅ Nueva pestaña detectada")
+                    print("✅ Nueva pestaña detectada")
                     self.driver.switch_to.window(self.driver.window_handles[1])
                     time.sleep(3)
                     self.driver.save_screenshot(f"pdf_tab_{paciente_index}.png")
 
                     pdf_content = self.extraer_contenido_pdf_desde_navegador()
+                    info_paciente = self.extraer_info_paciente()
                     info_consultas = self.extraer_info_consultas_con_openai(pdf_content, info_paciente["ID_Paciente"])
 
                     self.guardar_datos_paciente(info_paciente)
@@ -463,6 +447,7 @@ class HistoriasClinicasExtractor:
             except:
                 pass
             return False
+
 
 
     def extraer_info_paciente(self):
