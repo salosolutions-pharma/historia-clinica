@@ -461,27 +461,37 @@ class HistoriasClinicasExtractor:
 
     def extraer_contenido_pdf_desde_navegador(self):
         try:
-            print("📄 Intentando extraer texto del PDF desde el navegador...")
-            body_text = self.driver.find_element(By.TAG_NAME, 'body').text
-            if body_text and len(body_text.strip()) > 500:
-                print("✅ Texto extraído del PDF")
-                return body_text
+            print("📄 Extrayendo texto del PDF con JavaScript desde PDF.js...")
+            texto_completo = self.driver.execute_async_script("""
+                var callback = arguments[arguments.length - 1];
+                let texto = "";
+
+                (async () => {
+                    try {
+                        const pdf = window.PDFViewerApplication?.pdfDocument;
+                        const totalPages = pdf.numPages;
+                        for (let i = 1; i <= totalPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const content = await page.getTextContent();
+                            texto += content.items.map(item => item.str).join(" ") + "\n\n";
+                        }
+                        callback(texto);
+                    } catch (err) {
+                        callback("");
+                    }
+                })();
+            """)
+
+            if texto_completo and len(texto_completo.strip()) > 100:
+                print("✅ Texto extraído del PDF correctamente")
+                return texto_completo
             else:
-                print("⚠️ Texto del PDF es muy corto o vacío")
+                print("⚠️ El texto del PDF es muy corto o vacío")
                 return ""
         except Exception as e:
             print(f"❌ Error extrayendo texto del PDF: {str(e)}")
             return ""
 
-    def extraer_info_paciente(self):
-        print("🧪 Método extraer_info_paciente ya no se usa directamente. Toda la info del paciente ahora se extrae con OpenAI.")
-        return {}
-
-    def extraer_info_consultas_con_openai(self, texto, id_paciente):
-        print("🧪 Método extraer_info_consultas_con_openai ha sido reemplazado por extraer_info_clinica_openai. No se usa directamente.")
-        return []
-
-    
     def guardar_datos_paciente(self, paciente_dict):
         archivo = os.path.join("datos_extraidos", "pacientes.csv")
         campos = ["ID Paciente", "Nombre", "Edad", "Fecha"]
@@ -518,82 +528,38 @@ class HistoriasClinicasExtractor:
         except Exception as e:
             print(f"❌ Error guardando consultas: {str(e)}")
 
-    def extraer_info_clinica_openai(self, pdf_text=None, fallback_image_path=None):
-        import openai
-
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-
-        prompt = (
-            "Extrae y organiza la información clínica del siguiente texto o imagen. "
-            "Retorna un JSON con la siguiente estructura:\n\n"
-            "{\n"
-            "  \"paciente\": {\n"
-            "    \"ID Paciente\": \"\",\n"
-            "    \"Nombre\": \"\",\n"
-            "    \"Edad\": \"\",\n"
-            "    \"Fecha\": \"\"\n"
-            "  },\n"
-            "  \"consultas\": [\n"
-            "    {\n"
-            "      \"No Consulta\": \"\",\n"
-            "      \"Tabaquismo\": \"\",\n"
-            "      \"Diabetes\": \"\",\n"
-            "      \"PSA\": \"\",\n"
-            "      \"Presion Arterial\": \"\",\n"
-            "      \"Diagnostico\": \"\",\n"
-            "      \"Tratamiento\": \"\"\n"
-            "    }\n"
-            "  ]\n"
-            "}\n"
-            "Devuelve solo el JSON."
-        )
-
+    def extraer_info_clinica_openai(self, pdf_text="", fallback_image_path=None):
         try:
-            if pdf_text and len(pdf_text.strip()) > 500:
-                print("🧠 Enviando texto a OpenAI...")
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "Eres un asistente médico que estructura información clínica."},
-                        {"role": "user", "content": prompt + "\n\nTexto:\n" + pdf_text[:12000]}
-                    ],
-                    temperature=0.2,
-                    max_tokens=2000
-                )
-                json_data = response.choices[0].message.content.strip()
-                return json.loads(json_data)
-
-            elif fallback_image_path:
-                print("📸 Usando OpenAI Vision para extraer desde imagen...")
-                with open(fallback_image_path, "rb") as image_file:
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4-vision-preview",
-                        messages=[
-                            {"role": "system", "content": "Eres un asistente médico que estructura información clínica."},
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt},
-                                    {"type": "image", "image": image_file.read()}
-                                ]
-                            }
-                        ],
-                        max_tokens=2000
-                    )
-                    json_data = response.choices[0].message.content.strip()
-                    return json.loads(json_data)
-
-            else:
-                print("❌ No se recibió texto ni imagen válida para procesar con OpenAI.")
+            if not pdf_text.strip():
+                print("⚠️ Texto vacío. No se puede procesar con OpenAI.")
                 return None
+
+            print("🧠 Enviando contenido textual a OpenAI para análisis...")
+            import openai
+
+            prompt = (
+                "Extrae la siguiente información en formato JSON a partir del texto clínico de una historia clínica. "
+                "Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. "
+                "Y una lista llamada 'consultas', donde cada elemento contiene: ID Paciente, No Consulta, Tabaquismo, "
+                "Diabetes, PSA, Presion Arterial, Diagnostico, Tratamiento. "
+                "Si no se encuentra un campo, debe decir 'No reporta'.\n\nTexto:\n" + pdf_text
+            )
+
+            completion = openai.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "Eres un asistente experto en análisis clínico."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2
+            )
+
+            respuesta = completion.choices[0].message.content
+            print("📄 Respuesta de OpenAI recibida")
+
+            json_data = json.loads(respuesta)
+            return json_data
 
         except Exception as e:
             print(f"❌ Error procesando con OpenAI: {str(e)}")
             return None
-
-    def cerrar(self):
-        try:
-            self.driver.quit()
-            print("👋 Navegador cerrado correctamente")
-        except Exception as e:
-            print(f"⚠️ No se pudo cerrar el navegador: {str(e)}")
