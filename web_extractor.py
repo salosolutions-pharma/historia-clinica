@@ -3,6 +3,7 @@ import time
 import json
 import pandas as pd
 import openai
+import undetected_chromedriver as uc
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
@@ -10,35 +11,27 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from webdriver_manager.chrome import ChromeDriverManager
 import re
 
 class HistoriasClinicasExtractor:
     def __init__(self, output_folder="datos_extraidos"):
         print("🔄 Inicializando el extractor de historias clínicas...")
-        # Configurar el navegador
-        chrome_options = Options()
-        # chrome_options.add_argument("--headless")  # Descomenta para ejecutar sin interfaz visual
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--disable-notifications")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
         
-        # Preferencias para descargar PDFs
-        chrome_options.add_experimental_option(
-            "prefs",
-            {
-                "download.prompt_for_download": False,
-                "download.directory_upgrade": True,
-                "plugins.always_open_pdf_externally": False,  # Abrir PDFs en el navegador
-                "pdfjs.disabled": False,  # Habilitar el visor de PDF del navegador
-            },
-        )
+        # Configurar opciones de Chrome
+        options = uc.ChromeOptions()
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-notifications")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
         
-        # Inicializar Selenium
-        chromedriver_path = ChromeDriverManager().install()
-        service = ChromeService(executable_path=chromedriver_path)
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Inicializar Selenium con undetected-chromedriver
+        try:
+            self.driver = uc.Chrome(options=options)
+            print("✅ Navegador inicializado correctamente")
+        except Exception as e:
+            print(f"❌ Error al inicializar el navegador: {str(e)}")
+            raise e
+            
         self.wait = WebDriverWait(self.driver, 10)
         
         # Configurar rutas de salida
