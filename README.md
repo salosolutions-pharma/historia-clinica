@@ -1,68 +1,46 @@
-# Extractor de Historias Clínicas con OpenAI GPT-4o
+# Extractor de Historias Clínicas Web
 
-Este proyecto permite procesar archivos PDF escaneados de historias clínicas para extraer información estructurada utilizando la API de OpenAI GPT-4o.
+Este proyecto automatiza la extracción de datos desde el sistema web "Historias Clínicas Online" y estructura la información en dos tablas CSV siguiendo un modelo de base de datos predefinido.
+
+## Características
+
+- Inicio de sesión automático en el sistema web
+- Navegación por la interfaz de pacientes
+- Extracción de historias clínicas desde el visor de PDF integrado
+- Procesamiento inteligente del texto con OpenAI GPT-4o
+- Generación de tablas estructuradas en formato CSV
 
 ## Información extraída
 
-- Nombre, edad, cédula
-- Diagnóstico
-- PSA total
-- Tratamientos
-- Antecedentes relevantes (hipertensión, diabetes, tabaquismo)
-- Datos de imagenología
+La información se estructura en dos tablas:
+
+### Tabla Pacientes
+- Paciente: Nombre completo
+- Fecha: Fecha de nacimiento
+- ID_Paciente: Identificador único 
+- Edad: Edad del paciente
+
+### Tabla Consultas
+- ID_Paciente: Identificador que vincula con la tabla pacientes
+- No_Consulta: Número o fecha de consulta
+- Tabaquismo: SI/NO
+- Diabetes: SI/NO
+- PSA: Valor numérico (si existe)
+- Presion_Arterial: Valor de la presión arterial
+- Diagnostico: Texto del diagnóstico
+- Tratamiento: Tratamiento indicado
 
 ## Requisitos
 
 - Python 3.8+
 - OpenAI API con acceso a GPT-4o
-- Dependencias listadas en `requirements.txt`
+- Chrome o Chromium
+- Conexión a internet estable
+- Credenciales válidas para el sistema web
 
 ## Instalación
 
 1. Clona el repositorio:
 ```bash
-git clone https://github.com/salosolutions-pharma/historia-clinica.git
-cd historia-clinica
-```
-
-2. Instala las dependencias:
-```bash
-pip install -r requirements.txt
-```
-
-3. Crea un archivo `.env` con tu clave de OpenAI:
-```
-OPENAI_API_KEY=sk-xxxxx...
-```
-
-## Uso
-
-1. Coloca tus PDFs escaneados en la carpeta `pdfs/`
-
-2. Ejecuta el script principal:
-```bash
-python main.py
-```
-
-3. Los resultados se guardarán en `resultados_vision.csv`
-
-## Estructura del proyecto
-
-```
-historia-clinica/
-│
-├── pdfs/                  # Carpeta para almacenar los PDFs 
-├── utils/
-│   └── extractor.py       # Código para extraer información
-├── main.py                # Script principal
-├── requirements.txt       # Dependencias del proyecto
-└── README.md              # Documentación
-```
-
-## Notas sobre la versión
-
-Este proyecto utiliza el modelo `gpt-4o` de OpenAI
-
-## Licencia
-
-Este proyecto está licenciado bajo [MIT License](LICENSE).
+git clone https://github.com/tu-usuario/historia-clinica-web-extractor.git
+cd historia-clinica-web-extractor
