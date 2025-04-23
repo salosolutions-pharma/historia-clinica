@@ -42,5 +42,5 @@ La información se estructura en dos tablas:
 
 1. Clona el repositorio:
 ```bash
-git clone https://github.com/tu-usuario/historia-clinica-web-extractor.git
-cd historia-clinica-web-extractor
+git clone https://github.com/salosolutions-pharma/historia-clinica.git
+cd historia-clinica
