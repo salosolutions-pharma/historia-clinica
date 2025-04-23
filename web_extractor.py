@@ -536,8 +536,8 @@ class HistoriasClinicasExtractor:
 
             print("🧠 Enviando contenido textual a OpenAI para análisis...")
 
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-            client = OpenAI()
             prompt = (
                 "Extrae la siguiente información en formato JSON a partir del texto clínico de una historia clínica. "
                 "Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. "
