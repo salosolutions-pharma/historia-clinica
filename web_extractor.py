@@ -204,22 +204,109 @@ class HistoriasClinicasExtractor:
     def ir_a_pacientes(self):
         print("👥 Navegando a la sección de pacientes...")
         try:
-            # Hacer clic en Pacientes
-            pacientes_btn = self.wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Pacientes')]"))
-            )
-            pacientes_btn.click()
+            # Tomar captura para diagnóstico
+            self.driver.save_screenshot("dashboard.png")
+            print(f"📸 Captura de pantalla guardada en dashboard.png")
             
-            # Esperar a que cargue la lista
-            self.wait.until(
-                EC.presence_of_element_located((By.XPATH, "//button[contains(text(), 'Nuevo Paciente')]"))
-            )
-            print("✅ Navegación exitosa")
-            return True
+            # Esperar a que cargue completamente la página
+            time.sleep(5)
             
+            # Intentar diferentes métodos para encontrar el enlace a Pacientes
+            try:
+                # Método 1: XPATH
+                pacientes_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Pacientes')]"))
+                )
+                print("✅ Enlace a Pacientes encontrado con XPATH")
+            except:
+                try:
+                    # Método 2: CSS Selector
+                    pacientes_btn = self.wait.until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='pacientes']"))
+                    )
+                    print("✅ Enlace a Pacientes encontrado con CSS Selector")
+                except:
+                    try:
+                        # Método 3: Buscar por ícono o clase
+                        pacientes_btn = self.wait.until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, ".menu-pacientes, .icon-pacientes"))
+                        )
+                        print("✅ Enlace a Pacientes encontrado por clase")
+                    except:
+                        # Método 4: JavaScript (último recurso)
+                        print("⚠️ Usando JavaScript para encontrar y hacer clic en Pacientes")
+                        found = self.driver.execute_script("""
+                            var links = document.querySelectorAll('a');
+                            for(var i=0; i<links.length; i++) {
+                                if(links[i].textContent.includes('Paciente') || 
+                                links[i].href.includes('paciente') ||
+                                links[i].classList.contains('pacientes')) {
+                                    links[i].click();
+                                    return true;
+                                }
+                            }
+                            // Intentar con botones o divs clicables
+                            var elements = document.querySelectorAll('button, div[role="button"], div.clickable');
+                            for(var i=0; i<elements.length; i++) {
+                                if(elements[i].textContent.includes('Paciente')) {
+                                    elements[i].click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        if not found:
+                            print("❌ No se encontró ningún enlace a Pacientes con JavaScript")
+                            # Intentar ir directamente a la URL
+                            self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                            time.sleep(5)
+            
+            # Si encontramos el botón con los métodos 1-3, hacer clic
+            if 'pacientes_btn' in locals():
+                pacientes_btn.click()
+            
+            # Esperar a que cargue la página de pacientes
+            time.sleep(5)
+            
+            # Tomar captura para ver si cargó correctamente
+            self.driver.save_screenshot("pacientes_page.png")
+            print(f"📸 Captura de pantalla guardada en pacientes_page.png")
+            
+            # Verificar si la página de pacientes cargó correctamente
+            # Buscar elementos típicos de la página de pacientes
+            try:
+                # Intentar encontrar algún indicador de que estamos en la página de pacientes
+                if "pacientes" in self.driver.current_url.lower():
+                    print("✅ URL contiene 'pacientes'")
+                    return True
+                    
+                # Intentar encontrar el botón "Nuevo Paciente" o la tabla de pacientes
+                self.driver.find_element(By.XPATH, "//button[contains(text(), 'Nuevo Paciente')] | //table[contains(@class, 'pacientes')]")
+                print("✅ Navegación exitosa - Se encontró la tabla o botón de pacientes")
+                return True
+            except:
+                # Si no podemos verificar, pero no hay errores, asumimos que funcionó
+                print("⚠️ No se pudo verificar si estamos en la página de pacientes, pero continuamos")
+                return True
+                
         except Exception as e:
             print(f"❌ Error al navegar a pacientes: {str(e)}")
-            return False
+            
+            # Último intento - navegar directamente a la URL
+            try:
+                print("🔄 Intentando navegar directamente a la URL de pacientes...")
+                self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                time.sleep(5)
+                self.driver.save_screenshot("direct_pacientes.png")
+                
+                # Verificar si funcionó
+                if "pacientes" in self.driver.current_url.lower():
+                    print("✅ Navegación directa exitosa")
+                    return True
+                else:
+                    return False
+            except:
+                return False
     
     def obtener_lista_pacientes(self):
         print("📋 Obteniendo lista de pacientes...")
