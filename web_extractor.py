@@ -318,122 +318,178 @@ class HistoriasClinicasExtractor:
             self.driver.save_screenshot("pacientes_list.png")
             print(f"📸 Captura de pantalla guardada en pacientes_list.png")
             
-            # Intentar diferentes selectores para encontrar las filas de pacientes
-            pacientes_ids = []
+            # Obtener explícitamente todos los iconos de lápiz por su selector CSS
+            lapiz_icons = self.driver.find_elements(By.CSS_SELECTOR, "a.editar, a[href*='ficha_paciente'], .pencil-icon, a svg")
             
-            # Método 1: Selector de tabla estándar
+            if not lapiz_icons or len(lapiz_icons) == 0:
+                print("⚠️ No se encontraron iconos de lápiz con el selector CSS básico")
+                
+                # Intento con selector más general
+                lapiz_icons = self.driver.find_elements(By.TAG_NAME, "a")
+                
+                # Filtrar solo los que parecen ser de edición
+                filtered_icons = []
+                for icon in lapiz_icons:
+                    href = icon.get_attribute("href")
+                    if href and ("ficha" in href or "editar" in href or "paciente" in href):
+                        filtered_icons.append(icon)
+                
+                if filtered_icons:
+                    lapiz_icons = filtered_icons
+                    print(f"✅ Encontrados {len(lapiz_icons)} enlaces de edición por URL")
+            
+            # Si tenemos íconos, obtener los nombres asociados
+            if lapiz_icons and len(lapiz_icons) > 0:
+                print(f"✅ Encontrados {len(lapiz_icons)} iconos de edición")
+                
+                pacientes_ids = []
+                for i, icon in enumerate(lapiz_icons):
+                    # Intentar obtener el nombre del paciente
+                    try:
+                        # Subir al elemento TR padre
+                        current = icon
+                        while current.tag_name != "tr" and current.tag_name != "body":
+                            current = current.find_element(By.XPATH, "./..")
+                        
+                        if current.tag_name == "tr":
+                            nombre = current.find_element(By.XPATH, "./td[1]").text
+                        else:
+                            nombre = f"Paciente {i+1}"
+                    except:
+                        nombre = f"Paciente {i+1}"
+                        
+                    pacientes_ids.append({"index": i, "nombre": nombre, "icon": icon})
+                
+                return pacientes_ids
+            
+            # Método 2: Selector de tabla estándar
             try:
                 pacientes = self.driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
                 if pacientes and len(pacientes) > 0:
                     print(f"✅ Encontrados {len(pacientes)} pacientes con selector de tabla estándar")
                     
+                    pacientes_ids = []
                     for i, paciente in enumerate(pacientes):
                         try:
                             nombre = paciente.find_element(By.CSS_SELECTOR, "td:nth-child(1)").text
-                            pacientes_ids.append({"index": i, "nombre": nombre})
+                            # Buscar el icono de edición dentro de la fila
+                            icon = None
+                            try:
+                                icon = paciente.find_element(By.TAG_NAME, "a")
+                            except:
+                                pass
+                            
+                            pacientes_ids.append({"index": i, "nombre": nombre, "icon": icon})
                         except:
                             continue
+                    
+                    if pacientes_ids:
+                        return pacientes_ids
                 else:
                     print("❌ No se encontraron filas con selector de tabla estándar")
             except Exception as e:
                 print(f"⚠️ Error con selector estándar: {str(e)}")
             
-            # Método 2: Buscar por íconos de edición
-            if not pacientes_ids:
-                try:
-                    edit_icons = self.driver.find_elements(By.CSS_SELECTOR, "a.editar, .icon-edit, svg[name='edit'], .edit-button")
-                    if edit_icons and len(edit_icons) > 0:
-                        print(f"✅ Encontrados {len(edit_icons)} iconos de edición")
-                        
-                        # Para cada icono, encontrar el nombre del paciente asociado
-                        for i, icon in enumerate(edit_icons):
-                            try:
-                                # Intentar encontrar el nombre en la fila padre
-                                row = icon.find_element(By.XPATH, "./ancestor::tr")
-                                nombre = row.find_element(By.CSS_SELECTOR, "td:nth-child(1)").text
-                                pacientes_ids.append({"index": i, "nombre": nombre})
-                            except:
-                                # Si falla, usar un índice genérico
-                                pacientes_ids.append({"index": i, "nombre": f"Paciente {i+1}"})
-                    else:
-                        print("❌ No se encontraron iconos de edición")
-                except Exception as e:
-                    print(f"⚠️ Error buscando iconos de edición: {str(e)}")
-            
             # Método 3: Usar JavaScript para encontrar las filas de pacientes
-            if not pacientes_ids:
+            try:
                 print("⚠️ Usando JavaScript para encontrar pacientes")
-                try:
-                    pacientes_js = self.driver.execute_script("""
-                        var rows = [];
-                        
-                        // Buscar filas de tabla con contenido
-                        var tableRows = document.querySelectorAll('table tr');
-                        for(var i=0; i<tableRows.length; i++) {
-                            if(tableRows[i].children.length > 1 && tableRows[i].textContent.trim() != '') {
-                                rows.push({
-                                    index: i,
-                                    nombre: tableRows[i].children[0] ? tableRows[i].children[0].textContent.trim() : 'Nombre no encontrado'
-                                });
-                            }
-                        }
-                        
-                        // Si no hay filas, buscar divs que podrían ser filas
-                        if(rows.length === 0) {
-                            var divRows = document.querySelectorAll('.row-patient, .patient-item, div[role="row"]');
-                            for(var i=0; i<divRows.length; i++) {
-                                rows.push({
-                                    index: i,
-                                    nombre: divRows[i].textContent.trim().split('\\n')[0] || 'Paciente ' + (i+1)
-                                });
-                            }
-                        }
-                        
-                        return rows;
-                    """)
+                
+                pacientes_js = self.driver.execute_script("""
+                    var results = [];
                     
-                    if pacientes_js and len(pacientes_js) > 0:
-                        print(f"✅ Encontrados {len(pacientes_js)} pacientes con JavaScript")
-                        pacientes_ids = pacientes_js
-                    else:
-                        print("❌ No se encontraron pacientes con JavaScript")
-                except Exception as e:
-                    print(f"⚠️ Error en JavaScript: {str(e)}")
+                    // Buscar filas de tabla con contenido
+                    var tableRows = document.querySelectorAll('table tr');
+                    for(var i=0; i<tableRows.length; i++) {
+                        if(tableRows[i].children.length > 1 && tableRows[i].textContent.trim() != '') {
+                            // Buscar primer elemento <a> en la fila
+                            var icon = tableRows[i].querySelector('a');
+                            
+                            results.push({
+                                index: i,
+                                nombre: tableRows[i].children[0] ? tableRows[i].children[0].textContent.trim() : 'Paciente ' + (i+1),
+                                hasIcon: icon ? true : false
+                            });
+                        }
+                    }
+                    
+                    return results;
+                """)
+                
+                if pacientes_js and len(pacientes_js) > 0:
+                    print(f"✅ Encontrados {len(pacientes_js)} pacientes con JavaScript")
+                    
+                    pacientes_ids = []
+                    for i, paciente_js in enumerate(pacientes_js):
+                        if paciente_js.get('hasIcon', False):
+                            # Si JavaScript reporta que hay un icono, intentar encontrarlo
+                            try:
+                                pacientes = self.driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
+                                if i < len(pacientes):
+                                    try:
+                                        icon = pacientes[i].find_element(By.TAG_NAME, "a")
+                                    except:
+                                        icon = None
+                                else:
+                                    icon = None
+                            except:
+                                icon = None
+                        else:
+                            icon = None
+                            
+                        pacientes_ids.append({
+                            "index": i, 
+                            "nombre": paciente_js.get('nombre', f"Paciente {i+1}"),
+                            "icon": icon
+                        })
+                    
+                    return pacientes_ids
+                else:
+                    print("❌ No se encontraron pacientes con JavaScript")
+            except Exception as e:
+                print(f"⚠️ Error en JavaScript: {str(e)}")
             
-            # Método 4: Buscar directamente los lápices de edición
-            if not pacientes_ids:
-                try:
-                    edit_pencils = self.driver.find_elements(By.CSS_SELECTOR, "svg[stroke='currentColor'], .pencil-icon, .edit-icon, .fa-pencil")
-                    if edit_pencils and len(edit_pencils) > 0:
-                        print(f"✅ Encontrados {len(edit_pencils)} iconos de lápiz")
-                        
-                        for i in range(len(edit_pencils)):
-                            pacientes_ids.append({"index": i, "nombre": f"Paciente {i+1}"})
-                    else:
-                        print("❌ No se encontraron iconos de lápiz")
-                except Exception as e:
-                    print(f"⚠️ Error buscando iconos de lápiz: {str(e)}")
+            # Si llegamos aquí, recurrir a los datos manuales de depuración
+            print("⚠️ No se encontraron pacientes, generando entrada manual para depuración")
             
-            # Verificar si encontramos pacientes
-            if pacientes_ids:
-                print(f"✅ Se encontraron {len(pacientes_ids)} pacientes")
-                return pacientes_ids
-            else:
-                # Último recurso: generar datos ficticios solo para depuración
-                print("⚠️ No se encontraron pacientes, generando entrada manual para depuración")
-                debug_pacientes = [
-                    {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO"},
-                    {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL"},
-                    {"index": 2, "nombre": "VILLANUEVA, LEOPOLDO"}
-                ]
-                return debug_pacientes
+            # Intentar un último método desesperado: buscar los iconos de lápiz azul
+            try:
+                lapiz_icons = self.driver.find_elements(By.CSS_SELECTOR, "svg[stroke='currentColor']")
+                if lapiz_icons and len(lapiz_icons) > 0:
+                    print(f"✅ Encontrados {len(lapiz_icons)} iconos SVG que podrían ser lápices")
+                    
+                    debug_pacientes = [
+                        {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO", "icon": lapiz_icons[0] if len(lapiz_icons) > 0 else None},
+                        {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL", "icon": lapiz_icons[1] if len(lapiz_icons) > 1 else None},
+                        {"index": 2, "nombre": "VILLANUEVA, LEOPOLDO", "icon": lapiz_icons[2] if len(lapiz_icons) > 2 else None}
+                    ]
+                    return debug_pacientes
+            except:
+                pass
+            
+            # Si todo falla, devolver datos simulados sin íconos
+            debug_pacientes = [
+                {"index": 0, "nombre": "GARCIA LOPEZ, ANTONIO"},
+                {"index": 1, "nombre": "PEREZ VILLA, JOSE MIGUEL"},
+                {"index": 2, "nombre": "VILLANUEVA, LEOPOLDO"}
+            ]
+            return debug_pacientes
                 
         except Exception as e:
             print(f"❌ Error al obtener lista de pacientes: {str(e)}")
             return []
     
-    def procesar_paciente(self, paciente_index):
-        print(f"👤 Procesando paciente #{paciente_index+1}...")
+    def procesar_paciente(self, paciente_info):
+        # Determinar si recibimos un objeto paciente o solo un índice
+        if isinstance(paciente_info, dict):
+            paciente_index = paciente_info.get('index', 0)
+            nombre_paciente = paciente_info.get('nombre', f"Paciente #{paciente_index+1}")
+            icon = paciente_info.get('icon', None)
+        else:
+            paciente_index = paciente_info
+            nombre_paciente = f"Paciente #{paciente_index+1}"
+            icon = None
+        
+        print(f"👤 Procesando paciente: {nombre_paciente}...")
         try:
             # Tomar captura para diagnóstico
             self.driver.save_screenshot(f"pre_click_paciente_{paciente_index}.png")
@@ -441,27 +497,29 @@ class HistoriasClinicasExtractor:
             # Métodos para hacer clic en el paciente
             clicked = False
             
-            # Método 1: Intentar con el ícono de editar (lápiz)
-            try:
-                edit_icons = self.driver.find_elements(By.CSS_SELECTOR, "a.editar, .icon-edit, svg[name='edit'], .edit-button, svg[stroke='currentColor'], .pencil-icon, .edit-icon, .fa-pencil")
-                if paciente_index < len(edit_icons):
-                    edit_icon = edit_icons[paciente_index]
-                    nombre_paciente = f"Paciente #{paciente_index+1}"
-                    
-                    # Intentar obtener el nombre del paciente
-                    try:
-                        row = edit_icon.find_element(By.XPATH, "./ancestor::tr")
-                        nombre_paciente = row.find_element(By.CSS_SELECTOR, "td:nth-child(1)").text
-                    except:
-                        pass
-                    
-                    print(f"🔍 Accediendo a datos de: {nombre_paciente}")
-                    edit_icon.click()
+            # Método 0: Si tenemos el icono directo, usarlo
+            if icon is not None:
+                try:
+                    print(f"🔍 Haciendo clic directo en el icono para: {nombre_paciente}")
+                    icon.click()
                     clicked = True
-                else:
-                    print("❌ Índice de ícono de edición fuera de rango")
-            except Exception as e:
-                print(f"⚠️ Error haciendo clic en ícono de edición: {str(e)}")
+                    print("✅ Clic directo exitoso")
+                except Exception as e:
+                    print(f"⚠️ Error haciendo clic directo en el icono: {str(e)}")
+            
+            # Método 1: Intentar con el ícono de editar (lápiz)
+            if not clicked:
+                try:
+                    edit_icons = self.driver.find_elements(By.CSS_SELECTOR, "a.editar, .icon-edit, svg[name='edit'], .edit-button, svg[stroke='currentColor'], .pencil-icon, .edit-icon, .fa-pencil")
+                    if paciente_index < len(edit_icons):
+                        edit_icon = edit_icons[paciente_index]
+                        print(f"🔍 Accediendo a datos de: {nombre_paciente} con ícono de edición")
+                        edit_icon.click()
+                        clicked = True
+                    else:
+                        print("❌ Índice de ícono de edición fuera de rango")
+                except Exception as e:
+                    print(f"⚠️ Error haciendo clic en ícono de edición: {str(e)}")
             
             # Método 2: Hacer clic en la fila de la tabla
             if not clicked:
@@ -469,8 +527,11 @@ class HistoriasClinicasExtractor:
                     rows = self.driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
                     if paciente_index < len(rows):
                         row = rows[paciente_index]
-                        nombre_paciente = row.find_element(By.CSS_SELECTOR, "td:nth-child(1)").text
-                        print(f"🔍 Accediendo a datos de: {nombre_paciente}")
+                        try:
+                            row_name = row.find_element(By.CSS_SELECTOR, "td:nth-child(1)").text
+                            print(f"🔍 Accediendo a datos de: {row_name} con clic en fila")
+                        except:
+                            print(f"🔍 Accediendo a datos con clic en fila (nombre no detectado)")
                         
                         # Intentar hacer clic en cualquier enlace dentro de la fila
                         try:
@@ -490,20 +551,48 @@ class HistoriasClinicasExtractor:
                 print("⚠️ Usando JavaScript para hacer clic en el paciente")
                 try:
                     clicked = self.driver.execute_script(f"""
+                        // Intentar con filas de tabla
                         var rows = document.querySelectorAll('table tbody tr');
                         if(rows.length > {paciente_index}) {{
+                            // Intentar hacer clic en el enlace de la fila
+                            var link = rows[{paciente_index}].querySelector('a');
+                            if(link) {{
+                                link.click();
+                                return true;
+                            }}
+                            
+                            // Si no hay enlace, clic en la fila
                             rows[{paciente_index}].click();
                             return true;
                         }}
                         
+                        // Intentar con iconos de edición
                         var editIcons = document.querySelectorAll('a.editar, .icon-edit, svg[name="edit"], .edit-button, svg[stroke="currentColor"], .pencil-icon, .edit-icon, .fa-pencil');
                         if(editIcons.length > {paciente_index}) {{
                             editIcons[{paciente_index}].click();
                             return true;
                         }}
                         
+                        // Intentar con cualquier enlace que podría ser de edición
+                        var allLinks = document.querySelectorAll('a');
+                        var editLinks = [];
+                        for(var i=0; i<allLinks.length; i++) {{
+                            var href = allLinks[i].href || '';
+                            if(href.includes('ficha') || href.includes('paciente') || href.includes('editar')) {{
+                                editLinks.push(allLinks[i]);
+                            }}
+                        }}
+                        
+                        if(editLinks.length > {paciente_index}) {{
+                            editLinks[{paciente_index}].click();
+                            return true;
+                        }}
+                        
                         return false;
                     """)
+                    
+                    if clicked:
+                        print("✅ Clic con JavaScript exitoso")
                 except Exception as e:
                     print(f"⚠️ Error en JavaScript para clic: {str(e)}")
             

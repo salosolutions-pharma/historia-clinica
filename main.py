@@ -45,7 +45,7 @@ def main():
         # Procesar cada paciente
         for i, paciente in enumerate(pacientes):
             print(f"\n--- Procesando paciente {i+1}/{len(pacientes)}: {paciente['nombre']} ---")
-            extractor.procesar_paciente(paciente['index'])
+            extractor.procesar_paciente(paciente)  # Pasamos el objeto completo
             import time
             time.sleep(2)  # Pequeña pausa entre pacientes
         
