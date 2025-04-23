@@ -3,7 +3,7 @@ import csv
 import time
 import json
 import pandas as pd
-import openai
+from openai import OpenAI
 import undetected_chromedriver as uc
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -535,7 +535,7 @@ class HistoriasClinicasExtractor:
                 return None
 
             print("🧠 Enviando contenido textual a OpenAI para análisis...")
-            from openai import OpenAI
+
 
             client = OpenAI()
             prompt = (
