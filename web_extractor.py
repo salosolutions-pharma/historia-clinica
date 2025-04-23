@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import openai
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -36,10 +36,9 @@ class HistoriasClinicasExtractor:
         )
         
         # Inicializar Selenium
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), 
-            options=chrome_options
-        )
+        chromedriver_path = ChromeDriverManager().install()
+        service = ChromeService(executable_path=chromedriver_path)
+        self.driver = webdriver.Chrome(service=service, options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10)
         
         # Configurar rutas de salida
