@@ -58,37 +58,145 @@ class HistoriasClinicasExtractor:
         try:
             # Abrir la página
             self.driver.get("https://programahistoriasclinicas.com/")
-            time.sleep(2)
+            time.sleep(5)  # Esperamos más tiempo para que cargue completamente
             
-            # Hacer clic en iniciar sesión
-            iniciar_sesion_btn = self.wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Iniciar Sesión')]"))
-            )
-            iniciar_sesion_btn.click()
-            time.sleep(1)
+            # Tomar captura de pantalla de diagnóstico
+            self.driver.save_screenshot("login_page.png")
+            print(f"📸 Captura de pantalla guardada en login_page.png")
             
-            # Completar formulario de login
-            email_input = self.wait.until(
-                EC.presence_of_element_located((By.NAME, "email"))
-            )
-            email_input.send_keys(email)
+            # Intentar encontrar el botón de iniciar sesión de diferentes maneras
+            try:
+                # Método 1: XPATH
+                iniciar_sesion_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Iniciar Sesión')]"))
+                )
+                print("✅ Botón encontrado con XPATH")
+            except:
+                try:
+                    # Método 2: CSS Selector
+                    iniciar_sesion_btn = self.wait.until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn-iniciar-sesion, a.login-button"))
+                    )
+                    print("✅ Botón encontrado con CSS Selector")
+                except:
+                    try:
+                        # Método 3: Botón verde
+                        iniciar_sesion_btn = self.wait.until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn-success, .btn-primary"))
+                        )
+                        print("✅ Botón encontrado por clase btn-success/primary")
+                    except:
+                        # Método 4: JavaScript (último recurso)
+                        print("⚠️ Usando JavaScript para hacer clic en el botón")
+                        self.driver.execute_script("""
+                            var buttons = document.querySelectorAll('a.btn, button.btn');
+                            for(var i=0; i<buttons.length; i++) {
+                                if(buttons[i].textContent.includes('Iniciar Sesión') || 
+                                buttons[i].textContent.includes('Login') ||
+                                buttons[i].classList.contains('btn-success')) {
+                                    buttons[i].click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        time.sleep(3)
             
-            password_input = self.driver.find_element(By.NAME, "password")
-            password_input.send_keys(password)
+            # Si encontramos el botón con los métodos 1-3, hacer clic
+            if 'iniciar_sesion_btn' in locals():
+                iniciar_sesion_btn.click()
             
-            # Hacer clic en el botón de iniciar sesión
-            login_btn = self.wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Iniciar Sesión')]"))
-            )
-            login_btn.click()
+            time.sleep(3)
             
-            # Esperar a que cargue la página principal
-            self.wait.until(
-                EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Pacientes')]"))
-            )
-            print("✅ Sesión iniciada correctamente")
-            return True
+            # Tomar otra captura para ver la página de login
+            self.driver.save_screenshot("login_form.png")
+            print(f"📸 Captura de pantalla guardada en login_form.png")
             
+            # Completar formulario de login (con más robustez)
+            try:
+                # Intentar encontrar el campo de email de diferentes maneras
+                try:
+                    email_input = self.wait.until(
+                        EC.presence_of_element_located((By.NAME, "email"))
+                    )
+                except:
+                    try:
+                        email_input = self.driver.find_element(By.ID, "email")
+                    except:
+                        try:
+                            email_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='email']")
+                        except:
+                            # Último recurso: cualquier input que parezca de email
+                            email_input = self.driver.find_element(By.CSS_SELECTOR, "input[placeholder*='email' i], input[placeholder*='correo' i]")
+                
+                email_input.clear()
+                email_input.send_keys(email)
+                print("✅ Campo de email completado")
+                
+                # Intentar encontrar el campo de contraseña
+                try:
+                    password_input = self.driver.find_element(By.NAME, "password")
+                except:
+                    try:
+                        password_input = self.driver.find_element(By.ID, "password")
+                    except:
+                        try:
+                            password_input = self.driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+                        except:
+                            # Último recurso
+                            password_input = self.driver.find_element(By.CSS_SELECTOR, "input[placeholder*='contraseña' i], input[placeholder*='password' i]")
+                
+                password_input.clear()
+                password_input.send_keys(password)
+                print("✅ Campo de contraseña completado")
+                
+                # Buscar el botón de login de varias maneras
+                try:
+                    login_btn = self.wait.until(
+                        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Iniciar Sesión')]"))
+                    )
+                except:
+                    try:
+                        login_btn = self.driver.find_element(By.CSS_SELECTOR, "button.btn-primary, button.login-button, input[type='submit']")
+                    except:
+                        # JavaScript como último recurso
+                        print("⚠️ Usando JavaScript para hacer clic en el botón de login")
+                        self.driver.execute_script("""
+                            var buttons = document.querySelectorAll('button, input[type="submit"]');
+                            for(var i=0; i<buttons.length; i++) {
+                                if(buttons[i].textContent.includes('Iniciar') || 
+                                buttons[i].textContent.includes('Login') ||
+                                buttons[i].classList.contains('btn-primary')) {
+                                    buttons[i].click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        time.sleep(3)
+                
+                # Si encontramos el botón con los métodos anteriores, hacer clic
+                if 'login_btn' in locals():
+                    login_btn.click()
+                
+                time.sleep(5)
+                
+                # Verificar si el login fue exitoso
+                self.driver.save_screenshot("post_login.png")
+                print(f"📸 Captura de pantalla guardada en post_login.png")
+                
+                # Verificar si estamos en la página principal
+                if "panel" in self.driver.current_url:
+                    print("✅ Sesión iniciada correctamente")
+                    return True
+                else:
+                    print("⚠️ URL después del login no contiene 'panel'. URL actual:", self.driver.current_url)
+                    return False
+                
+            except Exception as e:
+                print(f"❌ Error al completar el formulario de login: {str(e)}")
+                return False
+                
         except Exception as e:
             print(f"❌ Error al iniciar sesión: {str(e)}")
             return False
