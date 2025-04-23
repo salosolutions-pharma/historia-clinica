@@ -535,8 +535,9 @@ class HistoriasClinicasExtractor:
                 return None
 
             print("🧠 Enviando contenido textual a OpenAI para análisis...")
-            import openai
+            from openai import OpenAI
 
+            client = OpenAI()
             prompt = (
                 "Extrae la siguiente información en formato JSON a partir del texto clínico de una historia clínica. "
                 "Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. "
@@ -545,8 +546,8 @@ class HistoriasClinicasExtractor:
                 "Si no se encuentra un campo, debe decir 'No reporta'.\n\nTexto:\n" + pdf_text
             )
 
-            completion = openai.chat.completions.create(
-                model="gpt-4",
+            completion = client.chat.completions.create(
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": "Eres un asistente experto en análisis clínico."},
                     {"role": "user", "content": prompt}
@@ -563,3 +564,11 @@ class HistoriasClinicasExtractor:
         except Exception as e:
             print(f"❌ Error procesando con OpenAI: {str(e)}")
             return None
+        
+    def cerrar(self):
+        print("👋 Cerrando navegador...")
+        try:
+            self.driver.quit()
+            print("✅ Navegador cerrado correctamente")
+        except Exception as e:
+            print(f"⚠️ Error al cerrar el navegador: {str(e)}")
