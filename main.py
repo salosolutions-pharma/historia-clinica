@@ -92,41 +92,53 @@ def main():
 if __name__ == "__main__":
     main()'''
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from web_extractor import HistoriasClinicasExtractor 
 import time
-from web_medifolios import HistoriasClinicasExtractor
 
 def main():
-    print("🚀 Iniciando extracción de datos de historias clínicas desde Medifolios...")
+    print("🚀 Iniciando extracción en Medifolios...")
 
-    # Configurar credenciales directamente aquí
+    # Credenciales (puedes cambiarlas directamente aquí)
     EMAIL = "80235068"
     PASSWORD = "8U135gf1M"
 
-    # Guardar las credenciales para posibles reinicios
-    credenciales = (EMAIL, PASSWORD)
+    # Configuración del navegador
+    options = Options()
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    # Inicializar navegador
+    driver = webdriver.Chrome(options=options)
+    wait = WebDriverWait(driver, 10)
 
     # Inicializar extractor
     extractor = HistoriasClinicasExtractor()
+    extractor.driver = driver
+    extractor.wait = wait
 
     try:
-        # Iniciar sesión
+        # Login
         if not extractor.login(EMAIL, PASSWORD):
-            print("❌ No se pudo iniciar sesión. Finalizando.")
+            print("❌ No se pudo iniciar sesión")
             extractor.cerrar()
             return
 
-        # Navegar a la sección de pacientes
+        # Navegación hasta pacientes
         extractor.navegar_a_pacientes()
         extractor.abrir_listado_pacientes()
 
-        # Visualizar e imprimir historia clínica del primer paciente
+        # Visualización de historia
         extractor.visualizar_historia()
 
-        print("\n✅ Extracción completada con éxito")
-        print("📁 Si el sistema guarda imágenes o PDFs, revisa tu carpeta de salida configurada.")
+        print("✅ Proceso completado exitosamente")
 
     except Exception as e:
-        print(f"❌ Error en el proceso: {str(e)}")
+        print(f"❌ Error en ejecución: {str(e)}")
 
     finally:
         extractor.cerrar()
