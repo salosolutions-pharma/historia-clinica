@@ -333,7 +333,14 @@ class HistoriasClinicasExtractor:
             print(f"❌ Error al obtener lista de pacientes: {str(e)}")
             return []
 
-    def procesar_paciente(self, paciente_info):
+    def procesar_paciente(self, paciente_info, credenciales=None):
+        """
+        Procesa la información de un paciente.
+        
+        Args:
+            paciente_info: Información del paciente (dict o índice)
+            credenciales: Tupla opcional (email, password) para reinicios de sesión
+        """
         if isinstance(paciente_info, dict):
             paciente_index = paciente_info.get('index', 0)
             nombre_paciente = paciente_info.get('nombre', f"Paciente #{paciente_index+1}")
@@ -410,36 +417,95 @@ class HistoriasClinicasExtractor:
                 time.sleep(3)
                 self.driver.save_screenshot(f"post_imprimir_{paciente_index}.png")
 
-                if len(self.driver.window_handles) > 1:
-                    print("✅ Nueva pestaña detectada")
-                    self.driver.switch_to.window(self.driver.window_handles[1])
-                    time.sleep(3)
+                # CORRECCIÓN: Mejor manejo de ventanas y pestañas
+                try:
+                    window_handles_count = len(self.driver.window_handles)
+                    if window_handles_count > 1:
+                        print(f"✅ Detectadas {window_handles_count} pestañas")
+                        # Guardar la ventana original
+                        original_window = self.driver.current_window_handle
+                        # Cambiar a la nueva pestaña (última abierta)
+                        self.driver.switch_to.window(self.driver.window_handles[-1])
+                        time.sleep(5) # Dar tiempo para que cargue completamente
 
-                    # Intentar extraer texto del PDF (si es posible)
+                        # Intentar extraer texto del PDF (si es posible)
+                        try:
+                            texto_pdf = self.driver.find_element(By.TAG_NAME, 'body').text
+                            if not texto_pdf or len(texto_pdf.strip()) < 50:
+                                print("📄 Intentando extraer contenido del PDF con método alternativo...")
+                                texto_pdf = self.extraer_contenido_pdf_desde_navegador()
+                        except:
+                            texto_pdf = ""
+                            print("⚠️ No se pudo obtener texto directo del PDF")
+                            
+                        screenshot_path = f"pdf_tab_{paciente_index}.png"
+                        self.driver.save_screenshot(screenshot_path)
+                        print(f"📸 Captura del PDF guardada: {screenshot_path}")
+
+                        print(f"🧠 Procesando contenido con OpenAI (longitud texto: {len(texto_pdf)} caracteres)...")
+                        resultado = self.extraer_info_clinica_openai(pdf_text=texto_pdf, fallback_image_path=screenshot_path)
+
+                        if resultado:
+                            paciente = resultado.get("paciente", {})
+                            consultas = resultado.get("consultas", [])
+                            self.guardar_datos_paciente(paciente)
+                            self.guardar_datos_consultas(consultas)
+                            print("✅ Datos guardados en CSV")
+                        else:
+                            print("⚠️ No se obtuvieron datos para guardar")
+
+                        # CORRECCIÓN: Manejo seguro del cierre de ventana
+                        try:
+                            print("🔄 Cerrando pestaña del PDF...")
+                            self.driver.close()
+                            time.sleep(1)
+                            # Volver a la ventana original
+                            self.driver.switch_to.window(original_window)
+                            print("✅ Regreso a la ventana principal")
+                        except Exception as close_error:
+                            print(f"⚠️ Error al cerrar pestaña: {str(close_error)}")
+                            # Si hay error al cerrar, intentar volver a la URL principal
+                            try:
+                                self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                                time.sleep(3)
+                            except:
+                                print("⚠️ Intentando reiniciar el navegador...")
+                                # En caso extremo, reiniciar el navegador
+                                self.driver.quit()
+                                options = uc.ChromeOptions()
+                                options.add_argument("--window-size=1920,1080")
+                                self.driver = uc.Chrome(options=options)
+                                self.wait = WebDriverWait(self.driver, 10)
+                                
+                                # CORRECCIÓN: Usar las credenciales pasadas como parámetro
+                                if credenciales and len(credenciales) == 2:
+                                    email, password = credenciales
+                                    self.login(email, password)
+                                    self.ir_a_pacientes()
+                                else:
+                                    print("⚠️ No hay credenciales disponibles para el reinicio")
+                                    return False
+                    
+                    # Volver a la página de pacientes de forma segura
                     try:
-                        texto_pdf = self.driver.find_element(By.TAG_NAME, 'body').text
-                    except:
-                        texto_pdf = ""
-
-                    screenshot_path = f"pdf_tab_{paciente_index}.png"
-                    self.driver.save_screenshot(screenshot_path)
-
-                    print("🧠 Procesando contenido con OpenAI (texto o imagen)...")
-                    resultado = self.extraer_info_clinica_openai(pdf_text=texto_pdf, fallback_image_path=screenshot_path)
-
-                    if resultado:
-                        paciente = resultado.get("paciente", {})
-                        consultas = resultado.get("consultas", [])
-                        self.guardar_datos_paciente(paciente)
-                        self.guardar_datos_consultas(consultas)
-
-                    self.driver.close()
-                    self.driver.switch_to.window(self.driver.window_handles[0])
-                    self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
-                    time.sleep(3)
+                        self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                        time.sleep(3)
+                    except Exception as nav_error:
+                        print(f"⚠️ Error al volver a la página de pacientes: {str(nav_error)}")
+                    
                     self.driver.save_screenshot(f"post_process_{paciente_index}.png")
                     print(f"✅ Procesamiento exitoso del paciente {nombre_paciente}")
                     return True
+                        
+                except Exception as window_error:
+                    print(f"❌ Error en el manejo de ventanas: {str(window_error)}")
+                    # Intentar recuperar la sesión
+                    try:
+                        self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                        time.sleep(3)
+                    except:
+                        pass
+                    return False
 
             except Exception as e:
                 print(f"❌ Error en procesamiento posterior a clic: {str(e)}")
