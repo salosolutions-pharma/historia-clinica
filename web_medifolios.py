@@ -99,3 +99,11 @@ class HistoriasClinicasExtractor:
             print("✅ Historia clínica visualizada e impresa")
         except Exception as e:
             print(f"❌ Error al visualizar historia clínica: {str(e)}")
+    
+    def cerrar(self):
+        print("👋 Cerrando navegador...")
+        try:
+            self.driver.quit()
+            print("✅ Navegador cerrado correctamente")
+        except Exception as e:
+            print(f"⚠️ Error al cerrar el navegador: {str(e)}")
