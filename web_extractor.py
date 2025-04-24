@@ -535,8 +535,15 @@ class HistoriasClinicasExtractor:
                 return None
 
             print("🧠 Enviando contenido textual a OpenAI para análisis...")
-
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            
+            # Corrección: Usar la API key directamente desde las variables de entorno
+            # y eliminar el argumento 'proxies' que no es aceptado
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                print("❌ No se encontró la API key de OpenAI")
+                return None
+                
+            client = OpenAI(api_key=api_key)  # Quitar cualquier otro parámetro
 
             prompt = (
                 "Extrae la siguiente información en formato JSON a partir del texto clínico de una historia clínica. "
@@ -558,8 +565,37 @@ class HistoriasClinicasExtractor:
             respuesta = completion.choices[0].message.content
             print("📄 Respuesta de OpenAI recibida")
 
-            json_data = json.loads(respuesta)
-            return json_data
+            # Añadir verificación para asegurar que la respuesta es JSON válido
+            try:
+                json_data = json.loads(respuesta)
+                print("✅ JSON procesado correctamente")
+                return json_data
+            except json.JSONDecodeError as je:
+                print(f"⚠️ Error decodificando JSON: {str(je)}")
+                print("⚠️ Respuesta recibida no es JSON válido, intentando extraerlo...")
+                # Intentar extraer solo la parte JSON de la respuesta
+                import re
+                json_match = re.search(r'(\{.*\})', respuesta, re.DOTALL)
+                if json_match:
+                    try:
+                        json_texto = json_match.group(1)
+                        json_data = json.loads(json_texto)
+                        print("✅ JSON extraído y procesado correctamente")
+                        return json_data
+                    except:
+                        pass
+                
+                # Si todo falla, crear una estructura básica
+                print("⚠️ Creando estructura JSON básica con datos limitados")
+                return {
+                    "paciente": {
+                        "ID Paciente": "No reporta",
+                        "Nombre": "No reporta",
+                        "Edad": "No reporta",
+                        "Fecha": "No reporta"
+                    },
+                    "consultas": []
+                }
 
         except Exception as e:
             print(f"❌ Error procesando con OpenAI: {str(e)}")

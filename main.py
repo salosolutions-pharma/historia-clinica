@@ -1,23 +1,27 @@
 import os
 from dotenv import load_dotenv
-import openai
 from web_extractor import HistoriasClinicasExtractor
 
 # Cargar variables de entorno
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def main():
     print("🚀 Iniciando extracción de datos de historias clínicas desde la web...")
     
     # Verificar que exista la API key de OpenAI
-    if not openai.api_key:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
         print("❌ No se encontró la clave API de OpenAI. Crea un archivo .env con OPENAI_API_KEY=sk-xxx")
         return
+    else:
+        print(f"✅ API key de OpenAI encontrada (longitud: {len(api_key)})")
     
     # Configurar credenciales
     EMAIL = "maria.londono@solutions2pharma.com"
     PASSWORD = "Clinicasolutions"
+    
+    # Guardar las credenciales para posibles reinicios
+    credenciales = (EMAIL, PASSWORD)
     
     # Inicializar extractor
     extractor = HistoriasClinicasExtractor()
@@ -45,9 +49,33 @@ def main():
         # Procesar cada paciente
         for i, paciente in enumerate(pacientes):
             print(f"\n--- Procesando paciente {i+1}/{len(pacientes)}: {paciente['nombre']} ---")
-            extractor.procesar_paciente(paciente)  # Pasamos el objeto completo
+            # Pasar las credenciales como parámetro
+            resultado = extractor.procesar_paciente(paciente, credenciales)
+            
+            # Si hay un error en el procesamiento del paciente, intentar recuperar la sesión
+            if not resultado:
+                print("⚠️ Hubo un problema con este paciente, asegurando la sesión antes de continuar...")
+                try:
+                    # Verificar si la sesión sigue activa
+                    extractor.driver.current_url
+                    print("✅ La sesión parece estar activa")
+                except:
+                    print("🔄 Reiniciando sesión...")
+                    # Reiniciar el navegador si es necesario
+                    extractor.cerrar()
+                    extractor = HistoriasClinicasExtractor()
+                    if not extractor.login(EMAIL, PASSWORD):
+                        print("❌ No se pudo reiniciar la sesión. Finalizando.")
+                        extractor.cerrar()
+                        return
+                    if not extractor.ir_a_pacientes():
+                        print("❌ No se pudo navegar a pacientes después de reiniciar. Finalizando.")
+                        extractor.cerrar()
+                        return
+            
+            # Pausa entre pacientes
             import time
-            time.sleep(2)  # Pequeña pausa entre pacientes
+            time.sleep(3)  # Incrementar pausa entre pacientes
         
         print("\n✅ Extracción completada con éxito")
         print(f"📁 Archivos generados en la carpeta: datos_extraidos/")
