@@ -17,21 +17,18 @@ def main():
         print(f"✅ API key de OpenAI encontrada (longitud: {len(api_key)})")
     
     # Configurar credenciales
-    #EMAIL = "maria.londono@solutions2pharma.com"
-    #PASSWORD = "Clinicasolutions"
-
-    usuario = 80235068
-    password = "8U135gf1M"
+    EMAIL = "maria.londono@solutions2pharma.com"
+    PASSWORD = "Clinicasolutions"
     
     # Guardar las credenciales para posibles reinicios
-    credenciales = (usuario, password)
+    credenciales = (EMAIL, PASSWORD)
     
     # Inicializar extractor
     extractor = HistoriasClinicasExtractor()
     
     try:
         # Iniciar sesión
-        if not extractor.login(usuario, password):
+        if not extractor.login(EMAIL, PASSWORD):
             print("❌ No se pudo iniciar sesión. Finalizando.")
             extractor.cerrar()
             return
@@ -67,7 +64,7 @@ def main():
                     # Reiniciar el navegador si es necesario
                     extractor.cerrar()
                     extractor = HistoriasClinicasExtractor()
-                    if not extractor.login(usuario, password):
+                    if not extractor.login(EMAIL, PASSWORD):
                         print("❌ No se pudo reiniciar la sesión. Finalizando.")
                         extractor.cerrar()
                         return
