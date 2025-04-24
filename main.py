@@ -93,7 +93,7 @@ if __name__ == "__main__":
     main()'''
 
 import time
-from web_extractor import HistoriasClinicasExtractor
+from web_medifolios import HistoriasClinicasExtractor
 
 def main():
     print("🚀 Iniciando extracción de datos de historias clínicas desde Medifolios...")
