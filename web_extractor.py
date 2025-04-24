@@ -373,33 +373,26 @@ class HistoriasClinicasExtractor:
                             break
                     except Exception as e:
                         print(f"⚠️ Error leyendo celda: {str(e)}")
-            except Exception as e:
-                print(f"❌ No se pudo buscar por HTML: {str(e)}")
+                
+                if not clicked:
+                    print("❌ No se pudo hacer clic en el paciente por HTML")
+                    return False
 
-            if not clicked:
-                print("❌ No se pudo hacer clic en el paciente por HTML")
-                return False
+                time.sleep(3)
+                self.driver.save_screenshot(f"post_click_paciente_{paciente_index}.png")
 
-            time.sleep(3)
-            self.driver.save_screenshot(f"post_click_paciente_{paciente_index}.png")
-
-            # Ir a pestaña de Consultas H.Clínica
-            try:
+                # Ir a pestaña de Consultas H.Clínica
                 print("🔍 Buscando el tab de Consultas H.Clínica por texto y rol...")
                 consultas_tab = self.wait.until(
                     EC.element_to_be_clickable((By.XPATH, "//div[@role='tab' and contains(., 'Consultas H.Clínica')]"))
                 )
                 consultas_tab.click()
                 print("✅ Tab Consultas H.Clínica clickeado")
-            except Exception as e:
-                print(f"❌ No se pudo encontrar el tab de Consultas H.Clínica: {str(e)}")
-                return False
 
-            time.sleep(3)
-            self.driver.save_screenshot(f"consultas_tab_{paciente_index}.png")
+                time.sleep(3)
+                self.driver.save_screenshot(f"consultas_tab_{paciente_index}.png")
 
-            # Procesar sección 'Más' y 'Imprimir Histórico'
-            try:
+                # Procesar sección 'Más' y 'Imprimir Histórico'
                 print("🔍 Buscando botón 'Más'")
                 mas_btn = self.wait.until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Más')]"))
@@ -418,76 +411,116 @@ class HistoriasClinicasExtractor:
                 time.sleep(3)
                 self.driver.save_screenshot(f"post_imprimir_{paciente_index}.png")
 
-                # CORRECCIÓN: Mejor manejo de ventanas y pestañas
-                try:
-                    window_handles_count = len(self.driver.window_handles)
-                    if window_handles_count > 1:
-                        print(f"✅ Detectadas {window_handles_count} pestañas")
-                        # Guardar la ventana original
-                        original_window = self.driver.current_window_handle
-                        # Cambiar a la nueva pestaña (última abierta)
-                        self.driver.switch_to.window(self.driver.window_handles[-1])
-                        time.sleep(5) # Dar tiempo para que cargue completamente
-
-                        # Intentar extraer texto del PDF (si es posible)
-                        try:
-                            texto_pdf = self.driver.find_element(By.TAG_NAME, 'body').text
-                            if not texto_pdf or len(texto_pdf.strip()) < 50:
-                                print("📄 Intentando extraer contenido del PDF con método alternativo...")
-                                texto_pdf = self.extraer_contenido_pdf_desde_navegador()
-                        except:
-                            texto_pdf = ""
-                            print("⚠️ No se pudo obtener texto directo del PDF")
-                            
-                        screenshot_path = f"pdf_tab_{paciente_index}.png"
-                        self.driver.save_screenshot(screenshot_path)
-                        print(f"📸 Captura del PDF guardada: {screenshot_path}")
-
-                        print(f"🧠 Procesando contenido con OpenAI (longitud texto: {len(texto_pdf)} caracteres)...")
-                        resultado = self.extraer_info_clinica_openai(pdf_text=texto_pdf, fallback_image_path=screenshot_path)
-
-                        if resultado:
-                            paciente = resultado.get("paciente", {})
-                            consultas = resultado.get("consultas", [])
-                            self.guardar_datos_paciente(paciente)
-                            self.guardar_datos_consultas(consultas)
-                            print("✅ Datos guardados en CSV")
+                # MANEJO DE VENTANAS Y PROCESO DE EXTRACCIÓN
+                window_handles_count = len(self.driver.window_handles)
+                if window_handles_count > 1:
+                    print(f"✅ Detectadas {window_handles_count} pestañas")
+                    
+                    # Guardar la ventana original
+                    original_window = self.driver.current_window_handle
+                    
+                    # Cambiar a la nueva pestaña (última abierta)
+                    self.driver.switch_to.window(self.driver.window_handles[-1])
+                    print("✅ Cambio a la pestaña del PDF")
+                    
+                    # Dar tiempo para que cargue completamente el PDF
+                    time.sleep(5)
+                    
+                    # Tomar capturas de cada página del PDF (si hay múltiples páginas)
+                    screenshot_paths = []
+                    
+                    # Capturar primera página
+                    pdf_screenshot_path = f"pdf_tab_{paciente_index}_p1.png"
+                    self.driver.save_screenshot(pdf_screenshot_path)
+                    screenshot_paths.append(pdf_screenshot_path)
+                    print(f"📸 Captura del PDF guardada: {pdf_screenshot_path}")
+                    
+                    # Probar si hay un botón para la siguiente página
+                    try:
+                        next_page_buttons = self.driver.find_elements(By.CSS_SELECTOR, ".next-button, .nextButton, [title='Next Page'], [aria-label='Next page']")
+                        if next_page_buttons:
+                            for i in range(1, 4):  # Limitamos a 3 páginas adicionales para evitar bucles infinitos
+                                next_page_buttons[0].click()
+                                time.sleep(2)
+                                pdf_screenshot_path = f"pdf_tab_{paciente_index}_p{i+1}.png"
+                                self.driver.save_screenshot(pdf_screenshot_path)
+                                screenshot_paths.append(pdf_screenshot_path)
+                                print(f"📸 Captura de página adicional guardada: {pdf_screenshot_path}")
+                    except Exception as page_error:
+                        print(f"ℹ️ No se encontraron más páginas para capturar: {str(page_error)}")
+                    
+                    # Intentar primero la extracción de texto
+                    resultado = None
+                    texto_extraido = ""
+                    
+                    try:
+                        print("📄 Intentando extraer texto del PDF...")
+                        texto_extraido = self.driver.find_element(By.TAG_NAME, 'body').text
+                        
+                        # Si el texto es suficientemente largo, procesarlo
+                        if texto_extraido and len(texto_extraido.strip()) > 100:
+                            print(f"✅ Texto extraído exitosamente (longitud: {len(texto_extraido)} caracteres)")
+                            print(f"📝 Primeros 100 caracteres: {texto_extraido[:100]}...")
+                            resultado = self.extraer_info_clinica_openai(pdf_text=texto_extraido)
                         else:
-                            print("⚠️ No se obtuvieron datos para guardar")
-
-                        # CORRECCIÓN: Manejo seguro del cierre de ventana
+                            print(f"⚠️ Texto extraído insuficiente (longitud: {len(texto_extraido.strip())} caracteres)")
+                            # Intentar método de extracción de texto alternativo
+                            texto_extraido = self.extraer_contenido_pdf_desde_navegador()
+                            if texto_extraido and len(texto_extraido.strip()) > 100:
+                                print(f"✅ Texto extraído con método alternativo (longitud: {len(texto_extraido)} caracteres)")
+                                resultado = self.extraer_info_clinica_openai(pdf_text=texto_extraido)
+                            else:
+                                print(f"⚠️ Texto alternativo insuficiente, pasando a extracción por imagen")
+                    except Exception as text_error:
+                        print(f"⚠️ Error extrayendo texto: {str(text_error)}")
+                    
+                    # Si no tenemos resultado con texto, usar la imagen
+                    if not resultado and screenshot_paths:
+                        print("🖼️ Intentando extraer información a partir de las imágenes...")
+                        resultado = self.extraer_info_por_imagen(screenshot_paths[0])  # Usamos la primera página
+                    
+                    # Si tenemos resultado, guardarlo
+                    if resultado:
+                        paciente = resultado.get("paciente", {})
+                        consultas = resultado.get("consultas", [])
+                        self.guardar_datos_paciente(paciente)
+                        self.guardar_datos_consultas(consultas)
+                        print("✅ Datos guardados en CSV")
+                    else:
+                        print("⚠️ No se pudo extraer información del PDF")
+                    
+                    # Cerrar la pestaña del PDF y volver a la principal
+                    try:
+                        print("🔄 Cerrando pestaña del PDF...")
+                        self.driver.close()
+                        time.sleep(1)
+                        self.driver.switch_to.window(original_window)
+                        print("✅ Regreso a la ventana principal")
+                    except Exception as close_error:
+                        print(f"⚠️ Error al cerrar pestaña: {str(close_error)}")
+                        # Intentar recuperación de emergencia
                         try:
-                            print("🔄 Cerrando pestaña del PDF...")
-                            self.driver.close()
-                            time.sleep(1)
-                            # Volver a la ventana original
-                            self.driver.switch_to.window(original_window)
-                            print("✅ Regreso a la ventana principal")
-                        except Exception as close_error:
-                            print(f"⚠️ Error al cerrar pestaña: {str(close_error)}")
-                            # Si hay error al cerrar, intentar volver a la URL principal
-                            try:
-                                self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
-                                time.sleep(3)
-                            except:
-                                print("⚠️ Intentando reiniciar el navegador...")
-                                # En caso extremo, reiniciar el navegador
+                            self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
+                            time.sleep(3)
+                        except:
+                            # En caso extremo, reiniciar navegador si tenemos credenciales
+                            if credenciales and len(credenciales) == 2:
+                                print("🔄 Reiniciando el navegador...")
                                 self.driver.quit()
                                 options = uc.ChromeOptions()
                                 options.add_argument("--window-size=1920,1080")
                                 self.driver = uc.Chrome(options=options)
                                 self.wait = WebDriverWait(self.driver, 10)
                                 
-                                # CORRECCIÓN: Usar las credenciales pasadas como parámetro
-                                if credenciales and len(credenciales) == 2:
-                                    email, password = credenciales
-                                    self.login(email, password)
-                                    self.ir_a_pacientes()
-                                else:
-                                    print("⚠️ No hay credenciales disponibles para el reinicio")
-                                    return False
+                                email, password = credenciales
+                                self.login(email, password)
+                                self.ir_a_pacientes()
+                                print("✅ Navegador reiniciado")
+                            else:
+                                print("⚠️ No hay credenciales disponibles para reiniciar")
+                                return False
                     
-                    # Volver a la página de pacientes de forma segura
+                    # Volver a la página de pacientes
                     try:
                         self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
                         time.sleep(3)
@@ -497,19 +530,13 @@ class HistoriasClinicasExtractor:
                     self.driver.save_screenshot(f"post_process_{paciente_index}.png")
                     print(f"✅ Procesamiento exitoso del paciente {nombre_paciente}")
                     return True
-                        
-                except Exception as window_error:
-                    print(f"❌ Error en el manejo de ventanas: {str(window_error)}")
-                    # Intentar recuperar la sesión
-                    try:
-                        self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
-                        time.sleep(3)
-                    except:
-                        pass
+                else:
+                    print("⚠️ No se abrió nueva pestaña para el PDF")
                     return False
-
+                    
             except Exception as e:
-                print(f"❌ Error en procesamiento posterior a clic: {str(e)}")
+                print(f"❌ Error en el flujo principal: {str(e)}")
+                # Intentar recuperar la sesión
                 try:
                     self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
                     time.sleep(3)
@@ -518,7 +545,7 @@ class HistoriasClinicasExtractor:
                 return False
 
         except Exception as e:
-            print(f"❌ Error al procesar paciente: {str(e)}")
+            print(f"❌ Error general al procesar paciente: {str(e)}")
             try:
                 self.driver.get("https://programahistoriasclinicas.com/panel/pacientes")
                 time.sleep(3)
@@ -774,7 +801,160 @@ class HistoriasClinicasExtractor:
                 },
                 "consultas": []
             }
+    def extraer_info_por_imagen(self, screenshot_path):
+        """
+        Extraer información de la historia clínica usando la captura de pantalla del PDF
+        cuando la extracción de texto falló.
         
+        Args:
+            screenshot_path: Ruta a la imagen capturada del PDF
+        
+        Returns:
+            Dict con la información extraída o estructura básica si hay error
+        """
+        try:
+            print(f"🖼️ Intentando extraer información de la imagen {screenshot_path}...")
+            
+            if not os.path.exists(screenshot_path):
+                print(f"❌ No se encontró la imagen en la ruta: {screenshot_path}")
+                return self._crear_estructura_basica()
+                
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                print("❌ No se encontró la API key de OpenAI")
+                return self._crear_estructura_basica()
+                
+            # Crear cliente de OpenAI
+            client = OpenAI(api_key=api_key)
+            
+            # Leer la imagen y convertirla a base64
+            try:
+                with open(screenshot_path, "rb") as image_file:
+                    base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+                    
+                    # Preparar prompt específico para extraer información de historia clínica
+                    prompt = """
+                    Analiza esta imagen de una historia clínica y extrae la siguiente información en formato JSON:
+                    
+                    1. Un objeto "paciente" con:
+                    - ID Paciente (del campo NIF/DNI)
+                    - Nombre (nombre completo del paciente)
+                    - Edad (valor numérico)
+                    - Fecha (fecha de la consulta)
+                    
+                    2. Una lista "consultas", donde cada consulta tiene:
+                    - ID Paciente (mismo que arriba)
+                    - No Consulta (número o fecha de la consulta)
+                    - Tabaquismo (Si/No/No reporta)
+                    - Diabetes (Si/No/No reporta)
+                    - PSA (valor si existe)
+                    - Presion Arterial (valores si existen)
+                    - Diagnostico (diagnóstico principal)
+                    - Tratamiento (medicación o tratamiento indicado)
+                    
+                    Responde SOLO con el JSON, sin explicaciones adicionales.
+                    Si algún campo no aparece en la imagen, usa "No reporta".
+                    """
+                    
+                    print("🧠 Enviando imagen a OpenAI para análisis...")
+                    
+                    # Llamar a la API de OpenAI con la imagen
+                    completion = client.chat.completions.create(
+                        model="gpt-4o",  # Modelo con capacidad de visión
+                        messages=[
+                            {"role": "system", "content": "Eres un asistente especializado en extraer información médica de historias clínicas."},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
+                                ]
+                            }
+                        ],
+                        temperature=0.2,  # Temperatura baja para respuestas más deterministas
+                        max_tokens=2000   # Suficiente para el JSON
+                    )
+                    
+                    # Obtener la respuesta
+                    respuesta = completion.choices[0].message.content
+                    print("📄 Respuesta de análisis de imagen recibida")
+                    
+                    # Depuración - guardar la respuesta en un archivo
+                    with open(f"{screenshot_path}_respuesta.txt", "w", encoding="utf-8") as f:
+                        f.write(respuesta)
+                    
+                    # Procesar la respuesta para extraer JSON
+                    return self._procesar_respuesta_json(respuesta)
+                    
+            except Exception as img_error:
+                print(f"❌ Error procesando la imagen: {str(img_error)}")
+                return self._crear_estructura_basica()
+                
+        except Exception as e:
+            print(f"❌ Error general en extracción por imagen: {str(e)}")
+            return self._crear_estructura_basica()
+
+    def _procesar_respuesta_json(self, respuesta):
+        """
+        Procesa la respuesta de la API para extraer el JSON.
+        
+        Args:
+            respuesta: Texto de respuesta de la API
+            
+        Returns:
+            Dict con los datos extraídos
+        """
+        try:
+            # Intentar parsear directamente
+            try:
+                json_data = json.loads(respuesta)
+                print("✅ JSON procesado correctamente")
+                return json_data
+            except json.JSONDecodeError:
+                print("⚠️ La respuesta no es JSON válido, intentando extraer...")
+                
+                # Buscar bloques de código JSON en la respuesta
+                import re
+                json_match = re.search(r'```json\s*([\s\S]*?)\s*```|```\s*([\s\S]*?)\s*```|\{[\s\S]*\}', respuesta)
+                if json_match:
+                    json_text = json_match.group(1) or json_match.group(2) or json_match.group(0)
+                    try:
+                        # Limpiar posibles caracteres adicionales
+                        json_text = json_text.strip()
+                        if not json_text.startswith('{'):
+                            json_text = '{' + json_text.split('{', 1)[1]
+                        if not json_text.endswith('}'):
+                            json_text = json_text.rsplit('}', 1)[0] + '}'
+                        
+                        json_data = json.loads(json_text)
+                        print("✅ JSON extraído y procesado correctamente")
+                        return json_data
+                    except Exception as je:
+                        print(f"❌ Error procesando JSON extraído: {str(je)}")
+                
+                # Si todo falla, crear una estructura básica
+                return self._crear_estructura_basica()
+        except Exception as e:
+            print(f"❌ Error procesando respuesta JSON: {str(e)}")
+            return self._crear_estructura_basica()
+
+    def _crear_estructura_basica(self):
+        """
+        Crea una estructura JSON básica cuando hay errores.
+        
+        Returns:
+            Dict con estructura básica de datos
+        """
+        print("⚠️ Usando estructura de datos por defecto")
+        return {
+            "paciente": {
+                "ID Paciente": "No reporta",
+                "Nombre": "No reporta",
+                "Edad": "No reporta",
+                "Fecha": "No reporta"
+            },
+            "consultas": []
+        }    
     def cerrar(self):
         print("👋 Cerrando navegador...")
         try:
