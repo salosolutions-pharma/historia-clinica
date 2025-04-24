@@ -333,6 +333,25 @@ class HistoriasClinicasExtractor:
         except Exception as e:
             print(f"❌ Error al obtener lista de pacientes: {str(e)}")
             return []
+    def _crear_cliente_openai(self):
+        """
+        Crea y devuelve un cliente de OpenAI configurado correctamente.
+        
+        Returns:
+            Instancia del cliente OpenAI o None si hay error
+        """
+        try:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                print("❌ No se encontró la API key de OpenAI")
+                return None
+                
+            # Crear cliente de OpenAI SOLAMENTE con api_key
+            client = OpenAI(api_key=api_key)
+            return client
+        except Exception as e:
+            print(f"❌ Error al crear cliente OpenAI: {str(e)}")
+            return None
 
     def procesar_paciente(self, paciente_info, credenciales=None):
         """
@@ -801,97 +820,86 @@ class HistoriasClinicasExtractor:
                 },
                 "consultas": []
             }
-    def extraer_info_por_imagen(self, screenshot_path):
+    def extraer_info_clinica_openai(self, pdf_text="", fallback_image_path=None):
         """
-        Extraer información de la historia clínica usando la captura de pantalla del PDF
-        cuando la extracción de texto falló.
+        Extrae información clínica usando OpenAI, procesando texto o imagen si es necesario.
         
         Args:
-            screenshot_path: Ruta a la imagen capturada del PDF
+            pdf_text: Texto extraído del PDF
+            fallback_image_path: Ruta a la imagen de respaldo si el texto está vacío
         
         Returns:
-            Dict con la información extraída o estructura básica si hay error
+            Dict con la información extraída o None si hay error
         """
         try:
-            print(f"🖼️ Intentando extraer información de la imagen {screenshot_path}...")
+            # Obtener el cliente OpenAI usando el método común
+            client = self._crear_cliente_openai()
+            if not client:
+                return self._crear_estructura_basica()
             
-            if not os.path.exists(screenshot_path):
-                print(f"❌ No se encontró la imagen en la ruta: {screenshot_path}")
-                return self._crear_estructura_basica()
+            # Si el texto está vacío o es muy corto, intentar con la imagen
+            if not pdf_text or len(pdf_text.strip()) < 50:
+                if fallback_image_path and os.path.exists(fallback_image_path):
+                    print(f"🖼️ El texto es insuficiente. Usando la imagen {fallback_image_path} como alternativa...")
+                    
+                    try:
+                        with open(fallback_image_path, "rb") as image_file:
+                            # Usar el modelo de visión de OpenAI para analizar la imagen
+                            print("🧠 Enviando imagen a OpenAI para análisis...")
+                            
+                            completion = client.chat.completions.create(
+                                model="gpt-4o",  # Este modelo puede procesar imágenes
+                                messages=[
+                                    {"role": "system", "content": "Eres un asistente experto en análisis clínico, capaz de extraer información de imágenes de historias clínicas."},
+                                    {
+                                        "role": "user", 
+                                        "content": [
+                                            {"type": "text", "text": "Extrae la siguiente información en formato JSON a partir de esta imagen de una historia clínica. Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. Y una lista llamada 'consultas', donde cada elemento contiene: ID Paciente, No Consulta, Tabaquismo, Diabetes, PSA, Presion Arterial, Diagnostico, Tratamiento. Si no se encuentra un campo, debe decir 'No reporta'."},
+                                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(image_file.read()).decode('utf-8')}"}}
+                                        ]
+                                    }
+                                ],
+                                temperature=0.2
+                            )
+                            
+                            respuesta = completion.choices[0].message.content
+                            print("📄 Respuesta de análisis de imagen recibida")
+                        
+                    except Exception as img_error:
+                        print(f"❌ Error al procesar la imagen: {str(img_error)}")
+                        respuesta = "{}"
+                else:
+                    print("⚠️ No hay texto ni imagen válida para procesar")
+                    return self._crear_estructura_basica()
+            else:
+                # Procesar el texto normalmente
+                print(f"📝 Procesando texto (longitud: {len(pdf_text)} caracteres)...")
                 
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                print("❌ No se encontró la API key de OpenAI")
-                return self._crear_estructura_basica()
-                
-            # Crear cliente de OpenAI
-            client = OpenAI(api_key=api_key)
-            
-            # Leer la imagen y convertirla a base64
-            try:
-                with open(screenshot_path, "rb") as image_file:
-                    base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-                    
-                    # Preparar prompt específico para extraer información de historia clínica
-                    prompt = """
-                    Analiza esta imagen de una historia clínica y extrae la siguiente información en formato JSON:
-                    
-                    1. Un objeto "paciente" con:
-                    - ID Paciente (del campo NIF/DNI)
-                    - Nombre (nombre completo del paciente)
-                    - Edad (valor numérico)
-                    - Fecha (fecha de la consulta)
-                    
-                    2. Una lista "consultas", donde cada consulta tiene:
-                    - ID Paciente (mismo que arriba)
-                    - No Consulta (número o fecha de la consulta)
-                    - Tabaquismo (Si/No/No reporta)
-                    - Diabetes (Si/No/No reporta)
-                    - PSA (valor si existe)
-                    - Presion Arterial (valores si existen)
-                    - Diagnostico (diagnóstico principal)
-                    - Tratamiento (medicación o tratamiento indicado)
-                    
-                    Responde SOLO con el JSON, sin explicaciones adicionales.
-                    Si algún campo no aparece en la imagen, usa "No reporta".
-                    """
-                    
-                    print("🧠 Enviando imagen a OpenAI para análisis...")
-                    
-                    # Llamar a la API de OpenAI con la imagen
-                    completion = client.chat.completions.create(
-                        model="gpt-4o",  # Modelo con capacidad de visión
-                        messages=[
-                            {"role": "system", "content": "Eres un asistente especializado en extraer información médica de historias clínicas."},
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
-                                ]
-                            }
-                        ],
-                        temperature=0.2,  # Temperatura baja para respuestas más deterministas
-                        max_tokens=2000   # Suficiente para el JSON
-                    )
-                    
-                    # Obtener la respuesta
-                    respuesta = completion.choices[0].message.content
-                    print("📄 Respuesta de análisis de imagen recibida")
-                    
-                    # Depuración - guardar la respuesta en un archivo
-                    with open(f"{screenshot_path}_respuesta.txt", "w", encoding="utf-8") as f:
-                        f.write(respuesta)
-                    
-                    # Procesar la respuesta para extraer JSON
-                    return self._procesar_respuesta_json(respuesta)
-                    
-            except Exception as img_error:
-                print(f"❌ Error procesando la imagen: {str(img_error)}")
-                return self._crear_estructura_basica()
-                
+                prompt = (
+                    "Extrae la siguiente información en formato JSON a partir del texto clínico de una historia clínica. "
+                    "Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. "
+                    "Y una lista llamada 'consultas', donde cada elemento contiene: ID Paciente, No Consulta, Tabaquismo, "
+                    "Diabetes, PSA, Presion Arterial, Diagnostico, Tratamiento. "
+                    "Si no se encuentra un campo, debe decir 'No reporta'.\n\nTexto:\n" + pdf_text
+                )
+
+                completion = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "Eres un asistente experto en análisis clínico."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2
+                )
+
+                respuesta = completion.choices[0].message.content
+                print("📄 Respuesta de OpenAI recibida")
+
+            # Procesar la respuesta para extraer el JSON
+            return self._procesar_respuesta_json(respuesta)
+        
         except Exception as e:
-            print(f"❌ Error general en extracción por imagen: {str(e)}")
+            print(f"❌ Error general procesando con OpenAI: {str(e)}")
             return self._crear_estructura_basica()
 
     def _procesar_respuesta_json(self, respuesta):
