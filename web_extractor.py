@@ -3,6 +3,7 @@ import csv
 import time
 import json
 import pandas as pd
+import base64
 from openai import OpenAI
 import undetected_chromedriver as uc
 from selenium import webdriver
@@ -526,36 +527,88 @@ class HistoriasClinicasExtractor:
             return False
 
     def extraer_contenido_pdf_desde_navegador(self):
+        """
+        Intenta extraer el contenido de texto de un PDF abierto en el navegador 
+        usando diferentes métodos.
+        """
         try:
-            print("📄 Extrayendo texto del PDF con JavaScript desde PDF.js...")
-            texto_completo = self.driver.execute_async_script("""
-                var callback = arguments[arguments.length - 1];
-                let texto = "";
-
-                (async () => {
-                    try {
-                        const pdf = window.PDFViewerApplication?.pdfDocument;
-                        const totalPages = pdf.numPages;
-                        for (let i = 1; i <= totalPages; i++) {
-                            const page = await pdf.getPage(i);
-                            const content = await page.getTextContent();
-                            texto += content.items.map(item => item.str).join(" ") + "\n\n";
-                        }
-                        callback(texto);
-                    } catch (err) {
-                        callback("");
+            print("📄 Intentando extraer texto del PDF con método directo...")
+            
+            # Método 1: Intenta obtener el texto directamente del body
+            try:
+                texto_directo = self.driver.find_element(By.TAG_NAME, 'body').text
+                if texto_directo and len(texto_directo.strip()) > 100:
+                    print("✅ Texto extraído directamente del body")
+                    return texto_directo
+                else:
+                    print("⚠️ Texto del body demasiado corto, probando otros métodos")
+            except Exception as e:
+                print(f"⚠️ Error extrayendo texto directo: {str(e)}")
+            
+            # Método 2: Intenta usar un script JavaScript más simple
+            try:
+                print("📄 Intentando extracción con JavaScript simple...")
+                script_simple = """
+                var text = '';
+                var elements = document.querySelectorAll('p, span, div');
+                for (var i = 0; i < elements.length; i++) {
+                    if (elements[i].innerText && elements[i].innerText.trim()) {
+                        text += elements[i].innerText + '\\n';
                     }
-                })();
-            """)
-
-            if texto_completo and len(texto_completo.strip()) > 100:
-                print("✅ Texto extraído del PDF correctamente")
-                return texto_completo
-            else:
-                print("⚠️ El texto del PDF es muy corto o vacío")
-                return ""
+                }
+                return text;
+                """
+                texto_js_simple = self.driver.execute_script(script_simple)
+                if texto_js_simple and len(texto_js_simple.strip()) > 100:
+                    print("✅ Texto extraído con JavaScript simple")
+                    return texto_js_simple
+                else:
+                    print("⚠️ JavaScript simple no extrajo suficiente texto")
+            except Exception as e:
+                print(f"⚠️ Error con JavaScript simple: {str(e)}")
+            
+            # Método 3: Para PDF.js, usar un enfoque más específico
+            try:
+                print("📄 Intentando extracción específica para PDF.js...")
+                script_pdfjs = """
+                var text = '';
+                
+                // Intentar encontrar elementos de PDF.js
+                var textLayers = document.querySelectorAll('.textLayer');
+                if (textLayers && textLayers.length > 0) {
+                    for (var i = 0; i < textLayers.length; i++) {
+                        text += textLayers[i].innerText + '\\n\\n';
+                    }
+                }
+                
+                // Si no encontramos nada, buscar otros elementos con texto
+                if (!text.trim()) {
+                    var canvasContainers = document.querySelectorAll('.canvasWrapper');
+                    if (canvasContainers && canvasContainers.length > 0) {
+                        text = 'PDF detectado pero no se puede extraer el texto completo';
+                    }
+                }
+                
+                return text;
+                """
+                texto_pdfjs = self.driver.execute_script(script_pdfjs)
+                if texto_pdfjs and len(texto_pdfjs.strip()) > 20:
+                    print("✅ Texto extraído con método PDF.js específico")
+                    return texto_pdfjs
+                else:
+                    print("⚠️ Método PDF.js no extrajo suficiente texto")
+            except Exception as e:
+                print(f"⚠️ Error con método PDF.js: {str(e)}")
+            
+            # Si llegamos aquí, todos los métodos fallaron
+            # En este punto, vamos a tomar una captura de pantalla y usarla como último recurso
+            print("⚠️ Todos los métodos de extracción de texto fallaron")
+            
+            # Devolver un mensaje para que API pueda procesar la captura
+            return "El contenido no pudo ser extraído como texto. Por favor, analiza la imagen adjunta."
+            
         except Exception as e:
-            print(f"❌ Error extrayendo texto del PDF: {str(e)}")
+            print(f"❌ Error general extrayendo texto del PDF: {str(e)}")
             return ""
 
     def guardar_datos_paciente(self, paciente_dict):
@@ -595,64 +648,110 @@ class HistoriasClinicasExtractor:
             print(f"❌ Error guardando consultas: {str(e)}")
 
     def extraer_info_clinica_openai(self, pdf_text="", fallback_image_path=None):
+        """
+        Extrae información clínica usando OpenAI, procesando texto o imagen si es necesario.
+        
+        Args:
+            pdf_text: Texto extraído del PDF
+            fallback_image_path: Ruta a la imagen de respaldo si el texto está vacío
+        
+        Returns:
+            Dict con la información extraída o None si hay error
+        """
         try:
-            if not pdf_text.strip():
-                print("⚠️ Texto vacío. No se puede procesar con OpenAI.")
-                return None
-
-            print("🧠 Enviando contenido textual a OpenAI para análisis...")
-            
-            # Corrección: Usar la API key directamente desde las variables de entorno
-            # y eliminar el argumento 'proxies' que no es aceptado
             api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
                 print("❌ No se encontró la API key de OpenAI")
                 return None
                 
-            client = OpenAI(api_key=api_key)  # Quitar cualquier otro parámetro
+            client = OpenAI(api_key=api_key)
+            
+            # Si el texto está vacío o es muy corto, intentar con la imagen
+            if not pdf_text or len(pdf_text.strip()) < 50:
+                if fallback_image_path and os.path.exists(fallback_image_path):
+                    print(f"🖼️ El texto es insuficiente. Usando la imagen {fallback_image_path} como alternativa...")
+                    
+                    try:
+                        with open(fallback_image_path, "rb") as image_file:
+                            # Usar el modelo de visión de OpenAI para analizar la imagen
+                            print("🧠 Enviando imagen a OpenAI para análisis...")
+                            
+                            completion = client.chat.completions.create(
+                                model="gpt-4o",  # Este modelo puede procesar imágenes
+                                messages=[
+                                    {"role": "system", "content": "Eres un asistente experto en análisis clínico, capaz de extraer información de imágenes de historias clínicas."},
+                                    {
+                                        "role": "user", 
+                                        "content": [
+                                            {"type": "text", "text": "Extrae la siguiente información en formato JSON a partir de esta imagen de una historia clínica. Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. Y una lista llamada 'consultas', donde cada elemento contiene: ID Paciente, No Consulta, Tabaquismo, Diabetes, PSA, Presion Arterial, Diagnostico, Tratamiento. Si no se encuentra un campo, debe decir 'No reporta'."},
+                                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(image_file.read()).decode('utf-8')}"}}
+                                        ]
+                                    }
+                                ],
+                                temperature=0.2
+                            )
+                            
+                            respuesta = completion.choices[0].message.content
+                            print("📄 Respuesta de análisis de imagen recibida")
+                        
+                    except Exception as img_error:
+                        print(f"❌ Error al procesar la imagen: {str(img_error)}")
+                        respuesta = "{}"
+                else:
+                    print("⚠️ No hay texto ni imagen válida para procesar")
+                    return None
+            else:
+                # Procesar el texto normalmente
+                print(f"📝 Procesando texto (longitud: {len(pdf_text)} caracteres)...")
+                
+                prompt = (
+                    "Extrae la siguiente información en formato JSON a partir del texto clínico de una historia clínica. "
+                    "Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. "
+                    "Y una lista llamada 'consultas', donde cada elemento contiene: ID Paciente, No Consulta, Tabaquismo, "
+                    "Diabetes, PSA, Presion Arterial, Diagnostico, Tratamiento. "
+                    "Si no se encuentra un campo, debe decir 'No reporta'.\n\nTexto:\n" + pdf_text
+                )
 
-            prompt = (
-                "Extrae la siguiente información en formato JSON a partir del texto clínico de una historia clínica. "
-                "Debe incluir un diccionario 'paciente' con los campos: ID Paciente, Nombre, Edad, Fecha. "
-                "Y una lista llamada 'consultas', donde cada elemento contiene: ID Paciente, No Consulta, Tabaquismo, "
-                "Diabetes, PSA, Presion Arterial, Diagnostico, Tratamiento. "
-                "Si no se encuentra un campo, debe decir 'No reporta'.\n\nTexto:\n" + pdf_text
-            )
+                completion = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "Eres un asistente experto en análisis clínico."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2
+                )
 
-            completion = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "Eres un asistente experto en análisis clínico."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2
-            )
+                respuesta = completion.choices[0].message.content
+                print("📄 Respuesta de OpenAI recibida")
 
-            respuesta = completion.choices[0].message.content
-            print("📄 Respuesta de OpenAI recibida")
-
-            # Añadir verificación para asegurar que la respuesta es JSON válido
+            # Procesar la respuesta para extraer el JSON
             try:
                 json_data = json.loads(respuesta)
                 print("✅ JSON procesado correctamente")
                 return json_data
-            except json.JSONDecodeError as je:
-                print(f"⚠️ Error decodificando JSON: {str(je)}")
-                print("⚠️ Respuesta recibida no es JSON válido, intentando extraerlo...")
-                # Intentar extraer solo la parte JSON de la respuesta
+            except json.JSONDecodeError:
+                print("⚠️ La respuesta no es un JSON válido, intentando extraer...")
+                # Buscar bloques de código JSON en la respuesta
                 import re
-                json_match = re.search(r'(\{.*\})', respuesta, re.DOTALL)
+                json_match = re.search(r'```json\s*([\s\S]*?)\s*```|```\s*([\s\S]*?)\s*```|\{[\s\S]*\}', respuesta)
                 if json_match:
+                    json_text = json_match.group(1) or json_match.group(2) or json_match.group(0)
                     try:
-                        json_texto = json_match.group(1)
-                        json_data = json.loads(json_texto)
+                        # Limpiar posibles caracteres adicionales
+                        json_text = json_text.strip()
+                        if not json_text.startswith('{'):
+                            json_text = '{' + json_text.split('{', 1)[1]
+                        if not json_text.endswith('}'):
+                            json_text = json_text.rsplit('}', 1)[0] + '}'
+                        
+                        json_data = json.loads(json_text)
                         print("✅ JSON extraído y procesado correctamente")
                         return json_data
-                    except:
-                        pass
+                    except Exception as je:
+                        print(f"❌ Error procesando JSON extraído: {str(je)}")
                 
                 # Si todo falla, crear una estructura básica
-                print("⚠️ Creando estructura JSON básica con datos limitados")
+                print("⚠️ Creando estructura JSON por defecto")
                 return {
                     "paciente": {
                         "ID Paciente": "No reporta",
@@ -662,10 +761,19 @@ class HistoriasClinicasExtractor:
                     },
                     "consultas": []
                 }
-
+        
         except Exception as e:
-            print(f"❌ Error procesando con OpenAI: {str(e)}")
-            return None
+            print(f"❌ Error general procesando con OpenAI: {str(e)}")
+            # En caso de error, intentar devolver una estructura básica
+            return {
+                "paciente": {
+                    "ID Paciente": "Error de procesamiento",
+                    "Nombre": "Error de procesamiento",
+                    "Edad": "Error de procesamiento",
+                    "Fecha": "Error de procesamiento"
+                },
+                "consultas": []
+            }
         
     def cerrar(self):
         print("👋 Cerrando navegador...")
