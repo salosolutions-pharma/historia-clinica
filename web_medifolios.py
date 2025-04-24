@@ -22,8 +22,9 @@ class HistoriasClinicasExtractor:
 
         # Click en botón INGRESO
         try:
+            # Usando el selector más específico según el HTML proporcionado
             ingreso_btn = self.wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'server0medifolios.net') and contains(text(), 'INGRESO')]"))
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, 'server0medifolios.net') and contains(@class, 'block-menu')]"))
             )
             ingreso_btn.click()
             print("✅ Botón INGRESO clicado")
@@ -41,12 +42,13 @@ class HistoriasClinicasExtractor:
             login_btn = self.driver.find_element(By.XPATH, "//button[contains(text(),'Ingresar')]")
             login_btn.click()
             print("✅ Formulario de login enviado")
+            
+            # Esperar a que cargue la página principal después del login
+            time.sleep(5)
+            return True
         except Exception as e:
             print(f"❌ Error en formulario de login: {str(e)}")
             return False
-
-        time.sleep(5)
-        return True
 
     def navegar_a_pacientes(self):
         try:
@@ -55,54 +57,80 @@ class HistoriasClinicasExtractor:
                 EC.element_to_be_clickable((By.ID, "OpenMenuMedifolios"))
             )
             menu_bienvenido.click()
-            time.sleep(1)
+            print("✅ Menú Bienvenido clicado")
+            time.sleep(2)
 
-            # Click en Pacientes
-            pacientes_btn = self.driver.find_element(By.XPATH, "//a[contains(@href,'SALUD_HOME/paciente')]")
+            # Click en Pacientes (según el selector HTML proporcionado)
+            pacientes_btn = self.wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'SALUD_HOME/paciente')]"))
+            )
             pacientes_btn.click()
             print("✅ Sección pacientes abierta")
+            time.sleep(3)
         except Exception as e:
             print(f"❌ Error navegando a pacientes: {str(e)}")
 
     def abrir_listado_pacientes(self):
         try:
+            # Click en botón Listado Pacientes
             listado_btn = self.wait.until(
                 EC.element_to_be_clickable((By.CLASS_NAME, "btnListadoPacientes"))
             )
             listado_btn.click()
             print("✅ Listado de pacientes abierto")
+            time.sleep(3)
         except Exception as e:
             print(f"❌ No se pudo abrir el listado de pacientes: {str(e)}")
 
     def visualizar_historia(self):
         try:
+            # Click en botón editar (el primero que encuentre)
             editar_btn = self.wait.until(
                 EC.element_to_be_clickable((By.CLASS_NAME, "btnCodPacienteListado"))
             )
             editar_btn.click()
+            print("✅ Botón editar clicado")
             time.sleep(2)
 
+            # Cerrar el diálogo que aparece
             cerrar_btn = self.wait.until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "ui-dialog-titlebar-close"))
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".ui-dialog-titlebar-close"))
             )
             cerrar_btn.click()
-            time.sleep(1)
+            print("✅ Diálogo cerrado")
+            time.sleep(2)
 
-            historial_btn = self.driver.find_element(By.ID, "btnPanelHistorico")
+            # Click en Historial del Paciente
+            historial_btn = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "btnPanelHistorico"))
+            )
             historial_btn.click()
-            time.sleep(2)
+            print("✅ Historial de paciente abierto")
+            time.sleep(3)
 
-            checkbox = self.driver.find_element(By.ID, "btnSeleccionarHistorias")
+            # Seleccionar todas las historias
+            checkbox = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "btnSeleccionarHistorias"))
+            )
             checkbox.click()
-            time.sleep(1)
-
-            visualizar_btn = self.driver.find_element(By.ID, "btnVisualizarSeleccionado")
-            visualizar_btn.click()
+            print("✅ Historias seleccionadas")
             time.sleep(2)
 
-            imprimir_btn = self.driver.find_element(By.ID, "btn_imprimir_visualizar_historia")
+            # Visualizar seleccionado
+            visualizar_btn = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "btnVisualizarSeleccionado"))
+            )
+            visualizar_btn.click()
+            print("✅ Visualizando historias seleccionadas")
+            time.sleep(3)
+
+            # Imprimir
+            imprimir_btn = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "btn_imprimir_visualizar_historia"))
+            )
             imprimir_btn.click()
             print("✅ Historia clínica visualizada e impresa")
+            time.sleep(3)
         except Exception as e:
             print(f"❌ Error al visualizar historia clínica: {str(e)}")
     
