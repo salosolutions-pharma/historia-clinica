@@ -1,4 +1,4 @@
-import os
+'''import os
 from dotenv import load_dotenv
 from web_extractor import HistoriasClinicasExtractor
 
@@ -87,6 +87,48 @@ def main():
     
     finally:
         # Cerrar el navegador
+        extractor.cerrar()
+
+if __name__ == "__main__":
+    main()'''
+
+import time
+from web_extractor import HistoriasClinicasExtractor
+
+def main():
+    print("🚀 Iniciando extracción de datos de historias clínicas desde Medifolios...")
+
+    # Configurar credenciales directamente aquí
+    EMAIL = "80235068"
+    PASSWORD = "8U135gf1M"
+
+    # Guardar las credenciales para posibles reinicios
+    credenciales = (EMAIL, PASSWORD)
+
+    # Inicializar extractor
+    extractor = HistoriasClinicasExtractor()
+
+    try:
+        # Iniciar sesión
+        if not extractor.login(EMAIL, PASSWORD):
+            print("❌ No se pudo iniciar sesión. Finalizando.")
+            extractor.cerrar()
+            return
+
+        # Navegar a la sección de pacientes
+        extractor.navegar_a_pacientes()
+        extractor.abrir_listado_pacientes()
+
+        # Visualizar e imprimir historia clínica del primer paciente
+        extractor.visualizar_historia()
+
+        print("\n✅ Extracción completada con éxito")
+        print("📁 Si el sistema guarda imágenes o PDFs, revisa tu carpeta de salida configurada.")
+
+    except Exception as e:
+        print(f"❌ Error en el proceso: {str(e)}")
+
+    finally:
         extractor.cerrar()
 
 if __name__ == "__main__":
