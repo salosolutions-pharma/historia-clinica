@@ -4,6 +4,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 import time
+import os
 
 class HistoriasClinicasExtractor:
     def __init__(self):
@@ -12,6 +13,18 @@ class HistoriasClinicasExtractor:
         chrome_options.add_argument("--disable-notifications")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument('--kiosk-printing')  # Impresión sin ventana
+
+        # Preferencias para descargar PDFs
+        chrome_options.add_experimental_option(
+            "prefs",
+            {
+                "download.prompt_for_download": False,
+                "download.directory_upgrade": True,
+                #"download.default_directory": 'D:\Downloads\historias_medifolios',  # Dirección donde se descarga
+                "plugins.always_open_pdf_externally": False  # Forzar descarga PDF
+            }
+        )
         
         self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10)
@@ -190,102 +203,102 @@ class HistoriasClinicasExtractor:
             time.sleep(1)  # Breve pausa
         except Exception as e:
             print(f"ℹ️ Limpieza de overlays: {str(e)[:100]}...")
+ 
+    def imprimir_con_cdp(self, path):
+        import base64
+        from pathlib import Path
 
+        result = self.driver.execute_cdp_cmd("Page.printToPDF", {
+            "landscape": False,
+            "displayHeaderFooter": False,
+            "printBackground": True,
+            "preferCSSPageSize": True
+        })
+
+        data = base64.b64decode(result['data'])
+        Path(path).write_bytes(data)
+        print(f"📥 PDF guardado en: {path}")
+
+    
     def visualizar_historia(self):
         try:
-            # Dar tiempo para que la página se estabilice después de cerrar diálogos
             time.sleep(3)
-            
-            # Limpiar posibles overlays antes de interactuar con el historial
             self._limpiar_overlays()
-            
+
             print("🔍 Buscando botón de historial clínico...")
-            
-            # Intentar hacer clic con JavaScript primero (más confiable cuando hay problemas de superposición)
-            try:
-                historial_btn = self.wait.until(
-                    EC.presence_of_element_located((By.ID, "btnPanelHistorico"))
-                )
-                # Hacer scroll al elemento para asegurarnos que está visible
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", historial_btn)
-                time.sleep(1)  # Breve pausa después del scroll
-                
-                # Hacer clic con JavaScript
-                self.driver.execute_script("arguments[0].click();", historial_btn)
-                print("✅ Historial de paciente abierto (usando JavaScript)")
-            except Exception as e:
-                print(f"⚠️ Error al hacer clic en historial con JavaScript: {str(e)[:100]}...")
-                # Último intento con clic normal
-                try:
-                    historial_btn = self.wait.until(
-                        EC.element_to_be_clickable((By.ID, "btnPanelHistorico"))
-                    )
-                    historial_btn.click()
-                    print("✅ Historial de paciente abierto (clic normal)")
-                except Exception as e2:
-                    print(f"❌ No se pudo acceder al historial: {str(e2)[:100]}...")
-                    raise Exception("No se pudo acceder al historial clínico")
-            
-            # Esperar a que cargue el panel de historial
+            historial_btn = self.wait.until(EC.presence_of_element_located((By.ID, "btnPanelHistorico")))
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", historial_btn)
+            time.sleep(1)
+            self.driver.execute_script("arguments[0].click();", historial_btn)
+            print("✅ Historial de paciente abierto (JS)")
+
             time.sleep(5)
-            
-            # Seleccionar todas las historias usando JavaScript
-            try:
-                print("🔍 Buscando checkbox para seleccionar historias...")
-                checkbox = self.wait.until(
-                    EC.presence_of_element_located((By.ID, "btnSeleccionarHistorias"))
-                )
-                # Hacer scroll y asegurar visibilidad
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", checkbox)
-                time.sleep(1)
-                # Clic con JavaScript
-                self.driver.execute_script("arguments[0].click();", checkbox)
-                print("✅ Historias seleccionadas (usando JavaScript)")
-            except Exception as e:
-                print(f"❌ Error al seleccionar historias: {str(e)[:100]}...")
-                raise Exception("No se pudieron seleccionar las historias")
+
+            print("🔍 Seleccionando todas las historias...")
+            checkbox = self.wait.until(EC.presence_of_element_located((By.ID, "btnSeleccionarHistorias")))
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", checkbox)
+            time.sleep(1)
+            self.driver.execute_script("arguments[0].click();", checkbox)
+            print("✅ Historias seleccionadas")
 
             time.sleep(2)
 
-            # Visualizar seleccionado con JavaScript
-            try:
-                print("🔍 Buscando botón para visualizar seleccionado...")
-                visualizar_btn = self.wait.until(
-                    EC.presence_of_element_located((By.ID, "btnVisualizarSeleccionado"))
-                )
-                # Hacer scroll y asegurar visibilidad
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", visualizar_btn)
-                time.sleep(1)
-                # Clic con JavaScript
-                self.driver.execute_script("arguments[0].click();", visualizar_btn)
-                print("✅ Visualizando historias seleccionadas (usando JavaScript)")
-            except Exception as e:
-                print(f"❌ Error al visualizar historias: {str(e)[:100]}...")
-                raise Exception("No se pudieron visualizar las historias seleccionadas")
+            print("🔍 Visualizando historias seleccionadas...")
+            visualizar_btn = self.wait.until(EC.presence_of_element_located((By.ID, "btnVisualizarSeleccionado")))
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", visualizar_btn)
+            time.sleep(1)
+            self.driver.execute_script("arguments[0].click();", visualizar_btn)
+            print("✅ Visualización iniciada")
 
-            time.sleep(4)
+            time.sleep(5)
 
-            # Imprimir con JavaScript
-            try:
-                print("🔍 Buscando botón para imprimir...")
-                imprimir_btn = self.wait.until(
-                    EC.presence_of_element_located((By.ID, "btn_imprimir_visualizar_historia"))
-                )
-                # Hacer scroll y asegurar visibilidad
-                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", imprimir_btn)
-                time.sleep(1)
-                # Clic con JavaScript
-                self.driver.execute_script("arguments[0].click();", imprimir_btn)
-                print("✅ Historia clínica visualizada e impresa (usando JavaScript)")
-            except Exception as e:
-                print(f"❌ Error al imprimir historia: {str(e)[:100]}...")
-                raise Exception("No se pudo imprimir la historia clínica")
+            print("🔍 Localizando el iframe del visor...")
+            iframe = self.wait.until(EC.presence_of_element_located((By.ID, "iframe_visualizar_reporte_formato")))
+            src = iframe.get_attribute("src")
+            print(f"📄 URL del visor: {src}")
 
-            time.sleep(3)
-            print("🎉 Proceso de visualización de historia clínica completado exitosamente")
+            # Abre la pestaña, imprime PDF y luego la cierra
+            self.driver.execute_script("window.open('');")
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            self.driver.get(src)
+
+            time.sleep(5)
+
+            print("🖨️ Generando PDF desde visor...")
+            ruta_pdf = "D:\\Downloads\\historias_medifolios\\historia2.pdf"
+            self.imprimir_con_cdp(ruta_pdf)
+
+            # Verificar el número de ventanas abiertas después de cerrar la pestaña
+            print(f"Ventanas abiertas después de cerrar la pestaña del PDF: {len(self.driver.window_handles)}")
+            self.driver.close()  # Cerrar pestaña del reporte
+            self.driver.switch_to.window(self.driver.window_handles[0])
+            print(f"✅ Regresado a la ventana principal. Ventanas abiertas: {len(self.driver.window_handles)}")
+            time.sleep(9)
+
+        
         except Exception as e:
             print(f"❌ Error al visualizar historia clínica: {str(e)}")
-    
+
+    def cerrar_visor_historia(self):
+        try:
+            # Esperar a que el botón de cerrar esté disponible y sea clickeable
+            print("🔍 Buscando el botón de cierre del visor...")
+        
+            close_button = self.wait.until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'ui-button-icon-only') and @title='Close']"))
+            )
+            
+            # Hacer clic en el botón para cerrar el visor de la historia
+            close_button.click()
+            print("✅ Botón de cierre del visor clicado con éxito.")
+            
+            # Esperar unos segundos para asegurarse de que la ventana se cierra correctamente
+            time.sleep(2)
+        
+        except Exception as e:
+            print(f"❌ Error al intentar cerrar el visor de la historia clínica: {str(e)}")
+        
+
     def cerrar(self):
         print("👋 Cerrando navegador...")
         try:
@@ -293,6 +306,8 @@ class HistoriasClinicasExtractor:
             print("✅ Navegador cerrado correctamente")
         except Exception as e:
             print(f"⚠️ Error al cerrar el navegador: {str(e)}")
+
+
 
 # -----------------------------------------------------
 # MAIN PARA EJECUCIÓN DESDE ESTE MISMO ARCHIVO
@@ -321,6 +336,7 @@ if __name__ == "__main__":
         
         print("📋 Accediendo al historial clínico...")
         extractor.visualizar_historia()
+        extractor.cerrar_visor_historia()
 
         print("✅ Proceso completado con éxito")
 
