@@ -404,9 +404,7 @@ if __name__ == "__main__":
     # Configuración
     NUM_PACIENTES = 3  # Número de pacientes a procesar
     OUTPUT_DIR = "D:\\Downloads\\historias_medifolios"
-    OPENAI_API_KEY = "YOUR_API_KEY_HERE"
-
-    # Crear el directorio de salida si no existe
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")  
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     extractor = HistoriasClinicasExtractor(output_dir=OUTPUT_DIR)

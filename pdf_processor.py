@@ -214,7 +214,7 @@ if __name__ == "__main__":
     PDF_DIRECTORY = "D:\\Downloads\\historias_medifolios"
     
     # Clave API de OpenAI (reemplazar con tu clave o configurar como variable de entorno)
-    OPENAI_API_KEY = "YOUR_API_KEY_HERE"
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     
     # Inicializar y ejecutar el procesador
     processor = PDFProcessor(api_key=OPENAI_API_KEY)
