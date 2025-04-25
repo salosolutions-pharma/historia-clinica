@@ -8,7 +8,7 @@ import os
 from pdf_processor import PDFProcessor
 
 class HistoriasClinicasExtractor:
-    def __init__(self, output_dir="D:\\Downloads\\historias_medifolios"):
+    def __init__(self, output_dir="C:\\Users\\salos\\Downloads\\historia_clinica\\datos_medifolios"):
         chrome_options = Options()
         chrome_options.add_argument("--start-maximized")
         chrome_options.add_argument("--disable-notifications")
