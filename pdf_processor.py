@@ -6,6 +6,9 @@ from pathlib import Path
 import json
 import time
 import re
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class PDFProcessor:
     def __init__(self, api_key=None):

@@ -3,9 +3,12 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from dotenv import load_dotenv
 import time
 import os
 from pdf_processor import PDFProcessor
+
+load_dotenv()
 
 class HistoriasClinicasExtractor:
     def __init__(self, output_dir="C:\\Users\\salos\\Downloads\\historia_clinica\\datos_medifolios"):
