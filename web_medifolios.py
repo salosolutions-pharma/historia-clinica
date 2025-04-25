@@ -58,15 +58,25 @@ class HistoriasClinicasExtractor:
             )
             menu_bienvenido.click()
             print("✅ Menú Bienvenido clicado")
-            time.sleep(2)
+            time.sleep(3)
 
             # Click en Pacientes (según el selector HTML proporcionado)
-            pacientes_btn = self.wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'SALUD_HOME/paciente')]"))
-            )
-            pacientes_btn.click()
-            print("✅ Sección pacientes abierta")
-            time.sleep(3)
+            try:
+                # Primer intento con selector más específico
+                pacientes_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'item_menu_board')]//a[contains(@href,'SALUD_HOME/paciente')]"))
+                )
+                pacientes_btn.click()
+                print("✅ Sección pacientes abierta (selector específico)")
+            except Exception as e:
+                print(f"⚠️ Primer selector falló, intentando alternativa: {str(e)}")
+                # Segundo intento con selector más genérico
+                pacientes_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[contains(@href,'SALUD_HOME/paciente')]"))
+                )
+                pacientes_btn.click()
+                print("✅ Sección pacientes abierta (selector genérico)")
+            time.sleep(5)  # Esperar más tiempo para que cargue la sección de pacientes
         except Exception as e:
             print(f"❌ Error navegando a pacientes: {str(e)}")
 
@@ -90,15 +100,26 @@ class HistoriasClinicasExtractor:
             )
             editar_btn.click()
             print("✅ Botón editar clicado")
-            time.sleep(2)
+            time.sleep(3)  # Esperar más tiempo para que aparezca el diálogo
 
-            # Cerrar el diálogo que aparece
-            cerrar_btn = self.wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, ".ui-dialog-titlebar-close"))
-            )
-            cerrar_btn.click()
-            print("✅ Diálogo cerrado")
-            time.sleep(2)
+            # Cerrar el diálogo que aparece - usar selector más específico
+            try:
+                cerrar_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[@class='ui-button ui-widget ui-state-default ui-corner-all ui-button-icon-only ui-dialog-titlebar-close']"))
+                )
+                cerrar_btn.click()
+                print("✅ Diálogo cerrado usando selector XPATH")
+            except Exception as e:
+                print(f"⚠️ Error con selector XPATH, intentando alternativa: {str(e)}")
+                try:
+                    # Intentar con un selector más genérico
+                    cerrar_btn = self.driver.find_element(By.CSS_SELECTOR, "button.ui-dialog-titlebar-close")
+                    cerrar_btn.click()
+                    print("✅ Diálogo cerrado usando selector CSS alternativo")
+                except Exception as e2:
+                    print(f"⚠️ Error con selector alternativo: {str(e2)}")
+                    
+            time.sleep(3)  # Esperar más tiempo después de cerrar el diálogo
 
             # Click en Historial del Paciente
             historial_btn = self.wait.until(
