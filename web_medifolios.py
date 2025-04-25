@@ -6,8 +6,9 @@ from selenium.webdriver.chrome.options import Options
 from dotenv import load_dotenv
 import time
 import os
-from pdf_processor import PDFProcessor
+import re
 
+# Cargar variables de entorno
 load_dotenv()
 
 class HistoriasClinicasExtractor:
@@ -25,8 +26,7 @@ class HistoriasClinicasExtractor:
             {
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
-                #"download.default_directory": 'D:\Downloads\historias_medifolios',  # Dirección donde se descarga
-                "plugins.always_open_pdf_externally": False  # Forzar descarga PDF
+                "plugins.always_open_pdf_externally": False  # No forzar descarga PDF
             }
         )
         
@@ -36,9 +36,8 @@ class HistoriasClinicasExtractor:
         self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10)
         
-        # Inicializar el procesador de PDFs
-        self.pdf_processor = None
-
+        # Lista para almacenar información sobre los PDFs descargados
+        self.pdfs_info = []
 
     def login(self, usuario, password):
         print(f"🔑 Iniciando sesión con usuario: {usuario}")
@@ -112,18 +111,78 @@ class HistoriasClinicasExtractor:
             )
             listado_btn.click()
             print("✅ Listado de pacientes abierto")
+            time.sleep(5)  # Esperar a que cargue el listado completo
+        except Exception as e:
+            print(f"❌ Error al abrir listado de pacientes: {str(e)}")
+    
+    def obtener_datos_paciente_actual(self):
+        """Obtiene los datos del paciente que está actualmente abierto"""
+        try:
+            # Intentar obtener el nombre del paciente
+            nombre_element = self.wait.until(
+                EC.presence_of_element_located((By.XPATH, "//h3[contains(@class,'titulo_historia_paciente')]/span"))
+            )
+            nombre_paciente = nombre_element.text.strip()
+            
+            # Intentar obtener el ID/documento del paciente
+            try:
+                documento_element = self.driver.find_element(By.XPATH, "//span[contains(@class,'documento_paciente')]")
+                documento = documento_element.text.strip()
+                # Extraer solo números del documento
+                documento = re.sub(r'[^0-9]', '', documento)
+            except:
+                documento = "ID_no_encontrado"
+            
+            print(f"📋 Paciente actual: {nombre_paciente} (ID: {documento})")
+            return {
+                "nombre": nombre_paciente,
+                "id": documento
+            }
+        except Exception as e:
+            print(f"⚠️ No se pudieron obtener datos del paciente: {str(e)}")
+            return {"nombre": "Desconocido", "id": "Desconocido"}
+    
+    def seleccionar_paciente_por_indice(self, indice=0):
+        """Selecciona un paciente del listado por su índice (0 es el primero)"""
+        try:
+            # Buscar todos los botones de editar pacientes
+            botones_editar = self.wait.until(
+                EC.presence_of_all_elements_located((By.CLASS_NAME, "btnCodPacienteListado"))
+            )
+            
+            if not botones_editar or len(botones_editar) <= indice:
+                print(f"⚠️ No hay suficientes pacientes en la lista (se encontraron {len(botones_editar)})")
+                return False
+            
+            # Obtener el botón del paciente en el índice deseado
+            boton_paciente = botones_editar[indice]
+            
+            # Obtener datos del paciente antes de hacer clic
+            fila_paciente = boton_paciente.find_element(By.XPATH, "./ancestor::tr")
+            celdas = fila_paciente.find_elements(By.TAG_NAME, "td")
+            
+            id_paciente = "Desconocido"
+            nombre_paciente = "Desconocido"
+            
+            if len(celdas) > 1:
+                id_paciente = celdas[1].get_attribute("title") if celdas[1].get_attribute("title") else "Desconocido"
+            
+            if len(celdas) > 3:
+                nombre_paciente = celdas[3].get_attribute("title") if celdas[3].get_attribute("title") else "Desconocido"
+            
+            # Hacer clic en el botón del paciente
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", boton_paciente)
+            time.sleep(1)
+            self.driver.execute_script("arguments[0].click();", boton_paciente)
+            print(f"✅ Paciente #{indice+1} seleccionado: {nombre_paciente} (ID: {id_paciente})")
             time.sleep(3)
             
-            # Click en botón editar (el primero que encuentre)
-            editar_btn = self.wait.until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "btnCodPacienteListado"))
-            )
-            editar_btn.click()
-            print("✅ Botón editar clicado")
-            time.sleep(3)  # Esperar a que aparezca el diálogo
-        except Exception as e:
-            print(f"❌ Error en listado de pacientes: {str(e)}")
+            return {"id": id_paciente, "nombre": nombre_paciente}
             
+        except Exception as e:
+            print(f"❌ Error al seleccionar paciente por índice {indice}: {str(e)}")
+            return False
+
     def cerrar_ventana(self):
         try:
             print("🔍 Buscando botón de cierre (X) en la ventana...")
@@ -231,8 +290,9 @@ class HistoriasClinicasExtractor:
         print(f"📥 PDF guardado en: {path}")
         return path
 
-    
-    def visualizar_historia(self, paciente_index=0):
+    def visualizar_historia(self, paciente_info, intento=1):
+        max_intentos = 3
+        
         try:
             time.sleep(3)
             self._limpiar_overlays()
@@ -276,9 +336,21 @@ class HistoriasClinicasExtractor:
 
             time.sleep(5)
 
-            print("🖨️ Generando PDF desde visor...")
-            ruta_pdf = os.path.join(self.output_dir, f"historia_paciente_{paciente_index}.pdf")
+            # Crear nombre de archivo con ID y nombre del paciente
+            nombre_archivo = f"{paciente_info['id']}_{paciente_info['nombre'].replace(' ', '_')}.pdf"
+            # Limpia el nombre de archivo de caracteres especiales
+            nombre_archivo = re.sub(r'[\\/*?:"<>|]', '', nombre_archivo)
+            ruta_pdf = os.path.join(self.output_dir, nombre_archivo)
+            
+            print(f"🖨️ Generando PDF desde visor para {paciente_info['nombre']}...")
             self.imprimir_con_cdp(ruta_pdf)
+
+            # Registrar la información del PDF
+            self.pdfs_info.append({
+                "ruta": ruta_pdf,
+                "id_paciente": paciente_info['id'],
+                "nombre_paciente": paciente_info['nombre']
+            })
 
             # Verificar el número de ventanas abiertas después de cerrar la pestaña
             print(f"Ventanas abiertas después de cerrar la pestaña del PDF: {len(self.driver.window_handles)}")
@@ -291,52 +363,90 @@ class HistoriasClinicasExtractor:
         
         except Exception as e:
             print(f"❌ Error al visualizar historia clínica: {str(e)}")
+            if intento < max_intentos:
+                print(f"🔄 Reintentando visualización (intento {intento+1}/{max_intentos})...")
+                return self.visualizar_historia(paciente_info, intento + 1)
             return None
 
     def cerrar_visor_historia(self):
         try:
             # Esperar a que el botón de cerrar esté disponible y sea clickeable
             print("🔍 Buscando el botón de cierre del visor...")
-        
-            close_button = self.wait.until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'ui-button-icon-only') and @title='Close']"))
-            )
             
-            # Hacer clic en el botón para cerrar el visor de la historia
-            close_button.click()
-            print("✅ Botón de cierre del visor clicado con éxito.")
+            # Intentar diferentes selectores para el botón de cierre
+            selectores = [
+                "//button[contains(@class, 'ui-button-icon-only') and @title='Close']",
+                "//span[@class='ui-icon ui-icon-closethick']/parent::button",
+                "//button[contains(@class, 'ui-dialog-titlebar-close')]"
+            ]
             
-            # Esperar unos segundos para asegurarse de que la ventana se cierra correctamente
-            time.sleep(2)
+            for selector in selectores:
+                try:
+                    close_button = self.wait.until(
+                        EC.element_to_be_clickable((By.XPATH, selector))
+                    )
+                    close_button.click()
+                    print("✅ Botón de cierre del visor clicado con éxito.")
+                    time.sleep(3)
+                    return True
+                except:
+                    continue
+            
+            # Si no funcionó con los selectores, intentar con JavaScript
+            js_commands = [
+                "document.querySelector('.ui-dialog-titlebar-close').click();",
+                "document.querySelector('button[title=\"Close\"]').click();",
+                "document.querySelectorAll('.ui-button.ui-dialog-titlebar-close')[0].click();"
+            ]
+            
+            for cmd in js_commands:
+                try:
+                    self.driver.execute_script(cmd)
+                    print("✅ Visor cerrado usando JavaScript.")
+                    time.sleep(3)
+                    return True
+                except:
+                    continue
+                    
+            # Como último recurso, limpiar overlays
+            self._limpiar_overlays()
+            return False
         
         except Exception as e:
             print(f"❌ Error al intentar cerrar el visor de la historia clínica: {str(e)}")
+            return False
 
-    def encontrar_y_abrir_siguiente_paciente(self):
-        """Encuentra y abre el siguiente paciente en la lista"""
+    def volver_a_listado_pacientes(self):
+        """Navega de regreso al listado de pacientes"""
         try:
-            print("🔍 Buscando siguiente paciente en la lista...")
+            print("🔄 Volviendo al listado de pacientes...")
             
-            # Buscar todos los botones de editar pacientes
-            botones_editar = self.driver.find_elements(By.CLASS_NAME, "btnCodPacienteListado")
+            # Primera opción: buscar un botón específico para volver al listado
+            try:
+                volver_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, "btnVolverListadoPacientes"))
+                )
+                volver_btn.click()
+                print("✅ Vuelto al listado mediante botón específico")
+                time.sleep(3)
+                return True
+            except:
+                print("⚠️ No se encontró botón específico para volver, intentando alternativas...")
             
-            if not botones_editar or len(botones_editar) <= 1:
-                print("⚠️ No se encontraron más pacientes en la lista actual")
+            # Segunda opción: ir directamente a la URL del listado
+            try:
+                self.driver.get("https://www.server0medifolios.net/index.php/SALUD_HOME/paciente")
+                time.sleep(3)
+                self.abrir_listado_pacientes()
+                print("✅ Vuelto al listado mediante URL directa")
+                return True
+            except Exception as e:
+                print(f"❌ Error volviendo al listado: {str(e)}")
                 return False
                 
-            # Intentar con el segundo botón (índice 1) para el siguiente paciente
-            siguiente_btn = botones_editar[1]
-            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", siguiente_btn)
-            time.sleep(1)
-            self.driver.execute_script("arguments[0].click();", siguiente_btn)
-            print("✅ Siguiente paciente seleccionado")
-            time.sleep(3)
-            
-            return True
-            
         except Exception as e:
-            print(f"❌ Error al buscar siguiente paciente: {str(e)}")
-            return False    
+            print(f"❌ Error general volviendo al listado: {str(e)}")
+            return False
 
     def cerrar(self):
         print("👋 Cerrando navegador...")
@@ -346,68 +456,74 @@ class HistoriasClinicasExtractor:
         except Exception as e:
             print(f"⚠️ Error al cerrar el navegador: {str(e)}")
 
-    def procesar_multiples_pacientes(self, num_pacientes=5, api_key=None):
-        """Procesa varios pacientes y extrae sus historias clínicas"""
-        # Inicializar el procesador de PDFs
-        self.pdf_processor = PDFProcessor(api_key=api_key)
+    def descargar_historias_clinicas(self, num_pacientes=3):
+        """Descarga las historias clínicas de varios pacientes secuencialmente"""
         
-        pdfs_generados = []
+        self.pdfs_info = []  # Reiniciar la lista de PDFs
         
         for i in range(num_pacientes):
             print(f"\n{'='*50}")
             print(f"🏥 PROCESANDO PACIENTE {i+1}/{num_pacientes}")
             print(f"{'='*50}")
             
-            if i > 0:  # Para el primer paciente ya estamos en su ficha
-                # Cerrar ventana actual y volver al listado
-                self.cerrar_ventana()
-                time.sleep(2)
+            try:
+                # Si es el primer paciente, necesitamos abrir el listado y seleccionarlo
+                if i == 0:
+                    self.abrir_listado_pacientes()
+                    paciente_info = self.seleccionar_paciente_por_indice(i)
+                    if not paciente_info:
+                        print("❌ No se pudo seleccionar el primer paciente. Abortando.")
+                        break
+                # Para los siguientes pacientes, cerrar ficha actual y volver al listado
+                else:
+                    if not self.volver_a_listado_pacientes():
+                        print("❌ No se pudo volver al listado de pacientes. Abortando.")
+                        break
+                    
+                    paciente_info = self.seleccionar_paciente_por_indice(i)
+                    if not paciente_info:
+                        print(f"❌ No se pudo seleccionar el paciente #{i+1}. Abortando.")
+                        break
                 
-                # Encontrar y abrir el siguiente paciente
-                if not self.encontrar_y_abrir_siguiente_paciente():
-                    print("⚠️ No se pueden procesar más pacientes")
+                # Visualizar y extraer la historia clínica
+                pdf_path = self.visualizar_historia(paciente_info)
+                
+                # Cerrar el visor de la historia
+                self.cerrar_visor_historia()
+                time.sleep(3)
+                
+            except Exception as e:
+                print(f"❌ Error procesando paciente #{i+1}: {str(e)}")
+                # Intentar continuar con el siguiente paciente
+                try:
+                    self.volver_a_listado_pacientes()
+                except:
+                    print("❌ No se pudo recuperar del error. Abortando.")
                     break
-            
-            # Visualizar y extraer la historia clínica
-            pdf_path = self.visualizar_historia(paciente_index=i)
-            if pdf_path:
-                pdfs_generados.append(pdf_path)
-            
-            # Cerrar el visor de la historia
-            self.cerrar_visor_historia()
-            time.sleep(3)
         
-        print(f"\n📊 RESUMEN: Se generaron {len(pdfs_generados)} archivos PDF")
+        print(f"\n📊 RESUMEN: Se generaron {len(self.pdfs_info)} archivos PDF")
+        for i, pdf_info in enumerate(self.pdfs_info):
+            print(f"  {i+1}. {pdf_info['nombre_paciente']} (ID: {pdf_info['id_paciente']}) -> {os.path.basename(pdf_info['ruta'])}")
         
-        # Procesar los PDFs generados con OpenAI
-        if pdfs_generados and self.pdf_processor:
-            print("\n🤖 INICIANDO PROCESAMIENTO DE PDFs CON OpenAI")
-            for pdf_path in pdfs_generados:
-                data = self.pdf_processor.process_pdf_with_openai(pdf_path)
-                self.pdf_processor.add_to_dataframes(data)
-            
-            # Guardar los resultados en CSV
-            self.pdf_processor.save_to_csv()
-        
-        return pdfs_generados
-
+        return self.pdfs_info
 
 
 # -----------------------------------------------------
-# MAIN PARA EJECUCIÓN DESDE ESTE MISMO ARCHIVO
+# MAIN PARA EJECUCIÓN
 # -----------------------------------------------------
 
 if __name__ == "__main__":
     print("🚀 Iniciando proceso en Medifolios...")
 
-    # Credenciales directamente aquí
+    # Credenciales
     USUARIO = "80235068"
     PASSWORD = "8U135gf1M"
     
     # Configuración
     NUM_PACIENTES = 3  # Número de pacientes a procesar
     OUTPUT_DIR = "C:\\Users\\salos\\Downloads\\historia_clinica\\output"
-    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")  
+    
+    # Crear el directorio de salida
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     extractor = HistoriasClinicasExtractor(output_dir=OUTPUT_DIR)
@@ -419,13 +535,15 @@ if __name__ == "__main__":
             exit()
 
         extractor.navegar_a_pacientes()
-        extractor.abrir_listado_pacientes()
         
-        # Procesar múltiples pacientes y sus historias clínicas
-        extractor.procesar_multiples_pacientes(NUM_PACIENTES, api_key=OPENAI_API_KEY)
+        # Descargar historias clínicas de múltiples pacientes
+        pdfs_info = extractor.descargar_historias_clinicas(NUM_PACIENTES)
         
-        print("✅ Proceso completado con éxito")
-
+        print("✅ Proceso de descarga completado con éxito")
+        
+        # Aquí se podría añadir la parte de procesamiento con OpenAI
+        # pero lo mantenemos separado como solicitaste
+        
     except Exception as e:
         print(f"❌ Error inesperado: {str(e)}")
 
