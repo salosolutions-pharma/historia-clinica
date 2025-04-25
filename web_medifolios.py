@@ -102,101 +102,187 @@ class HistoriasClinicasExtractor:
             
     def cerrar_ventana(self):
         try:
-            # Cerrar el diálogo que aparece - usar selector más específico
-            try:
-                cerrar_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[@class='ui-button ui-widget ui-state-default ui-corner-all ui-button-icon-only ui-dialog-titlebar-close']"))
-                )
-                cerrar_btn.click()
-                print("✅ Diálogo cerrado usando selector XPATH")
-            except Exception as e:
-                print(f"⚠️ Error con selector XPATH, intentando alternativa: {str(e)}")
-                try:
-                    # Intentar con un selector más genérico
-                    cerrar_btn = self.driver.find_element(By.CSS_SELECTOR, "button.ui-dialog-titlebar-close")
-                    cerrar_btn.click()
-                    print("✅ Diálogo cerrado usando selector CSS alternativo")
-                except Exception as e2:
-                    print(f"⚠️ Error con selector alternativo: {str(e2)}")
-                    try:
-                        # Último intento con JavaScript
-                        self.driver.execute_script("document.querySelector('.ui-dialog-titlebar-close').click();")
-                        print("✅ Diálogo cerrado usando JavaScript")
-                    except Exception as e3:
-                        print(f"❌ No se pudo cerrar el diálogo: {str(e3)}")
+            print("🔍 Buscando botón de cierre (X) en la ventana...")
             
-            time.sleep(3)  # Esperar después de cerrar el diálogo
+            # Intentar múltiples selectores para encontrar el botón X
+            selectors = [
+                "//button[contains(@class, 'ui-dialog-titlebar-close')]",                   # Xpath general
+                "//span[@class='ui-button-icon-primary ui-icon ui-icon-closethick']/parent::button",  # Por el ícono
+                "//button[@title='Close']",                                                # Por el título
+                "//div[contains(@class,'ui-dialog')]/div/button",                          # Por la estructura del diálogo
+                "//button[contains(@class,'close')]"                                       # Selector genérico para botones de cierre
+            ]
+            
+            for i, selector in enumerate(selectors):
+                try:
+                    close_btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
+                    close_btn.click()
+                    print(f"✅ Ventana cerrada usando selector #{i+1}")
+                    time.sleep(3)  # Esperar a que se cierre la ventana
+                    return True
+                except Exception as e:
+                    print(f"⚠️ Selector #{i+1} falló: {str(e)[:100]}...")
+            
+            # Si llegamos aquí, intentemos con JavaScript
+            try:
+                print("🔧 Intentando cerrar ventana con JavaScript...")
+                # Intentar múltiples opciones de JavaScript
+                js_commands = [
+                    "document.querySelector('.ui-dialog-titlebar-close').click();",
+                    "document.querySelector('button[title=\"Close\"]').click();",
+                    "document.querySelectorAll('.ui-button.ui-dialog-titlebar-close')[0].click();",
+                    "var buttons = document.getElementsByTagName('button'); for(var i=0; i<buttons.length; i++) { if(buttons[i].title === 'Close') buttons[i].click(); }",
+                    "document.querySelector('.ui-icon-closethick').parentNode.click();"
+                ]
+                
+                for cmd in js_commands:
+                    try:
+                        self.driver.execute_script(cmd)
+                        print("✅ Ventana cerrada usando JavaScript")
+                        time.sleep(3)
+                        return True
+                    except Exception as js_e:
+                        print(f"⚠️ Comando JS falló: {str(js_e)[:50]}...")
+            except Exception as e:
+                print(f"⚠️ Error general con JavaScript: {str(e)[:100]}...")
+            
+            # Última opción: Presionar tecla ESC
+            print("🔑 Intentando cerrar con tecla ESC...")
+            from selenium.webdriver.common.keys import Keys
+            from selenium.webdriver.common.action_chains import ActionChains
+            
+            actions = ActionChains(self.driver)
+            actions.send_keys(Keys.ESCAPE).perform()
+            time.sleep(2)
             
             # Verificar si hay un overlay y removerlo si existe
-            try:
-                overlay = self.driver.find_element(By.CSS_SELECTOR, "div.ui-widget-overlay")
-                if overlay:
-                    print("⚠️ Detectado overlay, intentando removerlo...")
-                    self.driver.execute_script("arguments[0].remove();", overlay)
-                    print("✅ Overlay removido")
-            except Exception as e:
-                print("✅ No se encontró overlay o no fue necesario removerlo")
-                
-            time.sleep(2)  # Esperar un poco más para asegurar que todo esté listo
+            self._limpiar_overlays()
+            
+            return False
         except Exception as e:
             print(f"❌ Error general al cerrar ventana: {str(e)}")
+            return False
+            
+    def _limpiar_overlays(self):
+        """Método auxiliar para limpiar overlays que puedan estar bloqueando la interfaz"""
+        try:
+            # Buscar todos los posibles overlays
+            overlays = self.driver.find_elements(By.CSS_SELECTOR, 
+                "div.ui-widget-overlay, div.ui-front, div.modal-backdrop, div.modal")
+            
+            if overlays:
+                print(f"⚠️ Detectados {len(overlays)} overlays, intentando removerlos...")
+                for overlay in overlays:
+                    try:
+                        self.driver.execute_script("arguments[0].remove();", overlay)
+                    except:
+                        pass  # Ignorar errores individuales
+                print("✅ Overlays removidos")
+            
+            # También intentar con script genérico
+            self.driver.execute_script("""
+                var overlays = document.querySelectorAll('.ui-widget-overlay, .ui-front, .modal-backdrop, .modal');
+                for(var i=0; i<overlays.length; i++) {
+                    overlays[i].remove();
+                }
+            """)
+            
+            time.sleep(1)  # Breve pausa
+        except Exception as e:
+            print(f"ℹ️ Limpieza de overlays: {str(e)[:100]}...")
 
     def visualizar_historia(self):
         try:
-            # Verificar si hay un overlay y removerlo si existe
-            try:
-                overlays = self.driver.find_elements(By.CSS_SELECTOR, "div.ui-widget-overlay, div.ui-front")
-                if overlays:
-                    print(f"⚠️ Detectados {len(overlays)} overlays antes de historial, intentando removerlos...")
-                    for overlay in overlays:
-                        self.driver.execute_script("arguments[0].remove();", overlay)
-                    print("✅ Overlays removidos")
-            except Exception as e:
-                print(f"ℹ️ No se removieron overlays: {str(e)}")
-                
-            time.sleep(2)  # Esperar para asegurar que todo esté listo
+            # Dar tiempo para que la página se estabilice después de cerrar diálogos
+            time.sleep(3)
             
-            # Click en Historial del Paciente con JavaScript para evitar bloqueos
+            # Limpiar posibles overlays antes de interactuar con el historial
+            self._limpiar_overlays()
+            
+            print("🔍 Buscando botón de historial clínico...")
+            
+            # Intentar hacer clic con JavaScript primero (más confiable cuando hay problemas de superposición)
             try:
                 historial_btn = self.wait.until(
                     EC.presence_of_element_located((By.ID, "btnPanelHistorico"))
                 )
+                # Hacer scroll al elemento para asegurarnos que está visible
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", historial_btn)
+                time.sleep(1)  # Breve pausa después del scroll
+                
+                # Hacer clic con JavaScript
                 self.driver.execute_script("arguments[0].click();", historial_btn)
                 print("✅ Historial de paciente abierto (usando JavaScript)")
             except Exception as e:
-                print(f"❌ Error al abrir historial con JavaScript: {str(e)}")
-                # Intentar con método tradicional como respaldo
-                historial_btn = self.wait.until(
-                    EC.element_to_be_clickable((By.ID, "btnPanelHistorico"))
+                print(f"⚠️ Error al hacer clic en historial con JavaScript: {str(e)[:100]}...")
+                # Último intento con clic normal
+                try:
+                    historial_btn = self.wait.until(
+                        EC.element_to_be_clickable((By.ID, "btnPanelHistorico"))
+                    )
+                    historial_btn.click()
+                    print("✅ Historial de paciente abierto (clic normal)")
+                except Exception as e2:
+                    print(f"❌ No se pudo acceder al historial: {str(e2)[:100]}...")
+                    raise Exception("No se pudo acceder al historial clínico")
+            
+            # Esperar a que cargue el panel de historial
+            time.sleep(5)
+            
+            # Seleccionar todas las historias usando JavaScript
+            try:
+                print("🔍 Buscando checkbox para seleccionar historias...")
+                checkbox = self.wait.until(
+                    EC.presence_of_element_located((By.ID, "btnSeleccionarHistorias"))
                 )
-                historial_btn.click()
-                print("✅ Historial de paciente abierto (método tradicional)")
-                
-            time.sleep(4)  # Esperar más tiempo para asegurar que el panel de historial se haya cargado completamente
+                # Hacer scroll y asegurar visibilidad
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", checkbox)
+                time.sleep(1)
+                # Clic con JavaScript
+                self.driver.execute_script("arguments[0].click();", checkbox)
+                print("✅ Historias seleccionadas (usando JavaScript)")
+            except Exception as e:
+                print(f"❌ Error al seleccionar historias: {str(e)[:100]}...")
+                raise Exception("No se pudieron seleccionar las historias")
 
-            # Seleccionar todas las historias
-            checkbox = self.wait.until(
-                EC.element_to_be_clickable((By.ID, "btnSeleccionarHistorias"))
-            )
-            checkbox.click()
-            print("✅ Historias seleccionadas")
             time.sleep(2)
 
-            # Visualizar seleccionado
-            visualizar_btn = self.wait.until(
-                EC.element_to_be_clickable((By.ID, "btnVisualizarSeleccionado"))
-            )
-            visualizar_btn.click()
-            print("✅ Visualizando historias seleccionadas")
-            time.sleep(3)
+            # Visualizar seleccionado con JavaScript
+            try:
+                print("🔍 Buscando botón para visualizar seleccionado...")
+                visualizar_btn = self.wait.until(
+                    EC.presence_of_element_located((By.ID, "btnVisualizarSeleccionado"))
+                )
+                # Hacer scroll y asegurar visibilidad
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", visualizar_btn)
+                time.sleep(1)
+                # Clic con JavaScript
+                self.driver.execute_script("arguments[0].click();", visualizar_btn)
+                print("✅ Visualizando historias seleccionadas (usando JavaScript)")
+            except Exception as e:
+                print(f"❌ Error al visualizar historias: {str(e)[:100]}...")
+                raise Exception("No se pudieron visualizar las historias seleccionadas")
 
-            # Imprimir
-            imprimir_btn = self.wait.until(
-                EC.element_to_be_clickable((By.ID, "btn_imprimir_visualizar_historia"))
-            )
-            imprimir_btn.click()
-            print("✅ Historia clínica visualizada e impresa")
+            time.sleep(4)
+
+            # Imprimir con JavaScript
+            try:
+                print("🔍 Buscando botón para imprimir...")
+                imprimir_btn = self.wait.until(
+                    EC.presence_of_element_located((By.ID, "btn_imprimir_visualizar_historia"))
+                )
+                # Hacer scroll y asegurar visibilidad
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", imprimir_btn)
+                time.sleep(1)
+                # Clic con JavaScript
+                self.driver.execute_script("arguments[0].click();", imprimir_btn)
+                print("✅ Historia clínica visualizada e impresa (usando JavaScript)")
+            except Exception as e:
+                print(f"❌ Error al imprimir historia: {str(e)[:100]}...")
+                raise Exception("No se pudo imprimir la historia clínica")
+
             time.sleep(3)
+            print("🎉 Proceso de visualización de historia clínica completado exitosamente")
         except Exception as e:
             print(f"❌ Error al visualizar historia clínica: {str(e)}")
     
