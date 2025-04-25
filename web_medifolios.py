@@ -5,9 +5,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 import time
 import os
+from pdf_processor import PDFProcessor
 
 class HistoriasClinicasExtractor:
-    def __init__(self):
+    def __init__(self, output_dir="D:\\Downloads\\historias_medifolios"):
         chrome_options = Options()
         chrome_options.add_argument("--start-maximized")
         chrome_options.add_argument("--disable-notifications")
@@ -26,8 +27,15 @@ class HistoriasClinicasExtractor:
             }
         )
         
+        self.output_dir = output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
+        
         self.driver = webdriver.Chrome(options=chrome_options)
         self.wait = WebDriverWait(self.driver, 10)
+        
+        # Inicializar el procesador de PDFs
+        self.pdf_processor = None
+
 
     def login(self, usuario, password):
         print(f"🔑 Iniciando sesión con usuario: {usuario}")
@@ -218,9 +226,10 @@ class HistoriasClinicasExtractor:
         data = base64.b64decode(result['data'])
         Path(path).write_bytes(data)
         print(f"📥 PDF guardado en: {path}")
+        return path
 
     
-    def visualizar_historia(self):
+    def visualizar_historia(self, paciente_index=0):
         try:
             time.sleep(3)
             self._limpiar_overlays()
@@ -265,7 +274,7 @@ class HistoriasClinicasExtractor:
             time.sleep(5)
 
             print("🖨️ Generando PDF desde visor...")
-            ruta_pdf = "D:\\Downloads\\historias_medifolios\\historia2.pdf"
+            ruta_pdf = os.path.join(self.output_dir, f"historia_paciente_{paciente_index}.pdf")
             self.imprimir_con_cdp(ruta_pdf)
 
             # Verificar el número de ventanas abiertas después de cerrar la pestaña
@@ -273,11 +282,13 @@ class HistoriasClinicasExtractor:
             self.driver.close()  # Cerrar pestaña del reporte
             self.driver.switch_to.window(self.driver.window_handles[0])
             print(f"✅ Regresado a la ventana principal. Ventanas abiertas: {len(self.driver.window_handles)}")
-            time.sleep(9)
-
+            time.sleep(5)
+            
+            return ruta_pdf
         
         except Exception as e:
             print(f"❌ Error al visualizar historia clínica: {str(e)}")
+            return None
 
     def cerrar_visor_historia(self):
         try:
@@ -297,7 +308,32 @@ class HistoriasClinicasExtractor:
         
         except Exception as e:
             print(f"❌ Error al intentar cerrar el visor de la historia clínica: {str(e)}")
-        
+
+    def encontrar_y_abrir_siguiente_paciente(self):
+        """Encuentra y abre el siguiente paciente en la lista"""
+        try:
+            print("🔍 Buscando siguiente paciente en la lista...")
+            
+            # Buscar todos los botones de editar pacientes
+            botones_editar = self.driver.find_elements(By.CLASS_NAME, "btnCodPacienteListado")
+            
+            if not botones_editar or len(botones_editar) <= 1:
+                print("⚠️ No se encontraron más pacientes en la lista actual")
+                return False
+                
+            # Intentar con el segundo botón (índice 1) para el siguiente paciente
+            siguiente_btn = botones_editar[1]
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", siguiente_btn)
+            time.sleep(1)
+            self.driver.execute_script("arguments[0].click();", siguiente_btn)
+            print("✅ Siguiente paciente seleccionado")
+            time.sleep(3)
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error al buscar siguiente paciente: {str(e)}")
+            return False    
 
     def cerrar(self):
         print("👋 Cerrando navegador...")
@@ -306,6 +342,51 @@ class HistoriasClinicasExtractor:
             print("✅ Navegador cerrado correctamente")
         except Exception as e:
             print(f"⚠️ Error al cerrar el navegador: {str(e)}")
+
+    def procesar_multiples_pacientes(self, num_pacientes=5, api_key=None):
+        """Procesa varios pacientes y extrae sus historias clínicas"""
+        # Inicializar el procesador de PDFs
+        self.pdf_processor = PDFProcessor(api_key=api_key)
+        
+        pdfs_generados = []
+        
+        for i in range(num_pacientes):
+            print(f"\n{'='*50}")
+            print(f"🏥 PROCESANDO PACIENTE {i+1}/{num_pacientes}")
+            print(f"{'='*50}")
+            
+            if i > 0:  # Para el primer paciente ya estamos en su ficha
+                # Cerrar ventana actual y volver al listado
+                self.cerrar_ventana()
+                time.sleep(2)
+                
+                # Encontrar y abrir el siguiente paciente
+                if not self.encontrar_y_abrir_siguiente_paciente():
+                    print("⚠️ No se pueden procesar más pacientes")
+                    break
+            
+            # Visualizar y extraer la historia clínica
+            pdf_path = self.visualizar_historia(paciente_index=i)
+            if pdf_path:
+                pdfs_generados.append(pdf_path)
+            
+            # Cerrar el visor de la historia
+            self.cerrar_visor_historia()
+            time.sleep(3)
+        
+        print(f"\n📊 RESUMEN: Se generaron {len(pdfs_generados)} archivos PDF")
+        
+        # Procesar los PDFs generados con OpenAI
+        if pdfs_generados and self.pdf_processor:
+            print("\n🤖 INICIANDO PROCESAMIENTO DE PDFs CON OpenAI")
+            for pdf_path in pdfs_generados:
+                data = self.pdf_processor.process_pdf_with_openai(pdf_path)
+                self.pdf_processor.add_to_dataframes(data)
+            
+            # Guardar los resultados en CSV
+            self.pdf_processor.save_to_csv()
+        
+        return pdfs_generados
 
 
 
@@ -319,8 +400,16 @@ if __name__ == "__main__":
     # Credenciales directamente aquí
     USUARIO = "80235068"
     PASSWORD = "8U135gf1M"
+    
+    # Configuración
+    NUM_PACIENTES = 3  # Número de pacientes a procesar
+    OUTPUT_DIR = "D:\\Downloads\\historias_medifolios"
+    OPENAI_API_KEY = "YOUR_API_KEY_HERE"
 
-    extractor = HistoriasClinicasExtractor()
+    # Crear el directorio de salida si no existe
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    extractor = HistoriasClinicasExtractor(output_dir=OUTPUT_DIR)
 
     try:
         if not extractor.login(USUARIO, PASSWORD):
@@ -331,13 +420,9 @@ if __name__ == "__main__":
         extractor.navegar_a_pacientes()
         extractor.abrir_listado_pacientes()
         
-        print("🧹 Limpiando ventanas antes de continuar...")
-        extractor.cerrar_ventana()  # Cerrar la ventana después de abrir el listado
+        # Procesar múltiples pacientes y sus historias clínicas
+        extractor.procesar_multiples_pacientes(NUM_PACIENTES, api_key=OPENAI_API_KEY)
         
-        print("📋 Accediendo al historial clínico...")
-        extractor.visualizar_historia()
-        extractor.cerrar_visor_historia()
-
         print("✅ Proceso completado con éxito")
 
     except Exception as e:
