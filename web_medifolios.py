@@ -89,19 +89,19 @@ class HistoriasClinicasExtractor:
             listado_btn.click()
             print("✅ Listado de pacientes abierto")
             time.sleep(3)
-        except Exception as e:
-            print(f"❌ No se pudo abrir el listado de pacientes: {str(e)}")
-
-    def visualizar_historia(self):
-        try:
+            
             # Click en botón editar (el primero que encuentre)
             editar_btn = self.wait.until(
                 EC.element_to_be_clickable((By.CLASS_NAME, "btnCodPacienteListado"))
             )
             editar_btn.click()
             print("✅ Botón editar clicado")
-            time.sleep(3)  # Esperar más tiempo para que aparezca el diálogo
-
+            time.sleep(3)  # Esperar a que aparezca el diálogo
+        except Exception as e:
+            print(f"❌ Error en listado de pacientes: {str(e)}")
+            
+    def cerrar_ventana(self):
+        try:
             # Cerrar el diálogo que aparece - usar selector más específico
             try:
                 cerrar_btn = self.wait.until(
@@ -118,9 +118,19 @@ class HistoriasClinicasExtractor:
                     print("✅ Diálogo cerrado usando selector CSS alternativo")
                 except Exception as e2:
                     print(f"⚠️ Error con selector alternativo: {str(e2)}")
-                    
-            time.sleep(3)  # Esperar más tiempo después de cerrar el diálogo
+                    try:
+                        # Último intento con JavaScript
+                        self.driver.execute_script("document.querySelector('.ui-dialog-titlebar-close').click();")
+                        print("✅ Diálogo cerrado usando JavaScript")
+                    except Exception as e3:
+                        print(f"❌ No se pudo cerrar el diálogo: {str(e3)}")
+            
+            time.sleep(3)  # Esperar después de cerrar el diálogo
+        except Exception as e:
+            print(f"❌ Error general al cerrar ventana: {str(e)}")
 
+    def visualizar_historia(self):
+        try:
             # Click en Historial del Paciente
             historial_btn = self.wait.until(
                 EC.element_to_be_clickable((By.ID, "btnPanelHistorico"))
@@ -184,6 +194,7 @@ if __name__ == "__main__":
 
         extractor.navegar_a_pacientes()
         extractor.abrir_listado_pacientes()
+        extractor.cerrar_ventana()  # Cerrar la ventana después de abrir el listado
         extractor.visualizar_historia()
 
         print("✅ Proceso completado con éxito")
