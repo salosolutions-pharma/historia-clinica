@@ -126,18 +126,53 @@ class HistoriasClinicasExtractor:
                         print(f"❌ No se pudo cerrar el diálogo: {str(e3)}")
             
             time.sleep(3)  # Esperar después de cerrar el diálogo
+            
+            # Verificar si hay un overlay y removerlo si existe
+            try:
+                overlay = self.driver.find_element(By.CSS_SELECTOR, "div.ui-widget-overlay")
+                if overlay:
+                    print("⚠️ Detectado overlay, intentando removerlo...")
+                    self.driver.execute_script("arguments[0].remove();", overlay)
+                    print("✅ Overlay removido")
+            except Exception as e:
+                print("✅ No se encontró overlay o no fue necesario removerlo")
+                
+            time.sleep(2)  # Esperar un poco más para asegurar que todo esté listo
         except Exception as e:
             print(f"❌ Error general al cerrar ventana: {str(e)}")
 
     def visualizar_historia(self):
         try:
-            # Click en Historial del Paciente
-            historial_btn = self.wait.until(
-                EC.element_to_be_clickable((By.ID, "btnPanelHistorico"))
-            )
-            historial_btn.click()
-            print("✅ Historial de paciente abierto")
-            time.sleep(3)
+            # Verificar si hay un overlay y removerlo si existe
+            try:
+                overlays = self.driver.find_elements(By.CSS_SELECTOR, "div.ui-widget-overlay, div.ui-front")
+                if overlays:
+                    print(f"⚠️ Detectados {len(overlays)} overlays antes de historial, intentando removerlos...")
+                    for overlay in overlays:
+                        self.driver.execute_script("arguments[0].remove();", overlay)
+                    print("✅ Overlays removidos")
+            except Exception as e:
+                print(f"ℹ️ No se removieron overlays: {str(e)}")
+                
+            time.sleep(2)  # Esperar para asegurar que todo esté listo
+            
+            # Click en Historial del Paciente con JavaScript para evitar bloqueos
+            try:
+                historial_btn = self.wait.until(
+                    EC.presence_of_element_located((By.ID, "btnPanelHistorico"))
+                )
+                self.driver.execute_script("arguments[0].click();", historial_btn)
+                print("✅ Historial de paciente abierto (usando JavaScript)")
+            except Exception as e:
+                print(f"❌ Error al abrir historial con JavaScript: {str(e)}")
+                # Intentar con método tradicional como respaldo
+                historial_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.ID, "btnPanelHistorico"))
+                )
+                historial_btn.click()
+                print("✅ Historial de paciente abierto (método tradicional)")
+                
+            time.sleep(4)  # Esperar más tiempo para asegurar que el panel de historial se haya cargado completamente
 
             # Seleccionar todas las historias
             checkbox = self.wait.until(
@@ -194,7 +229,11 @@ if __name__ == "__main__":
 
         extractor.navegar_a_pacientes()
         extractor.abrir_listado_pacientes()
+        
+        print("🧹 Limpiando ventanas antes de continuar...")
         extractor.cerrar_ventana()  # Cerrar la ventana después de abrir el listado
+        
+        print("📋 Accediendo al historial clínico...")
         extractor.visualizar_historia()
 
         print("✅ Proceso completado con éxito")
