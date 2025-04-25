@@ -403,7 +403,7 @@ if __name__ == "__main__":
     
     # Configuración
     NUM_PACIENTES = 3  # Número de pacientes a procesar
-    OUTPUT_DIR = "D:\\Downloads\\historias_medifolios"
+    OUTPUT_DIR = "C:\\Users\\salos\\Downloads\\historia_clinica\\output"
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")  
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
