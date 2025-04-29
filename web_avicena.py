@@ -4,6 +4,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.ui import Select
 import time
 import os
 import tempfile
@@ -189,6 +190,28 @@ class AvicenaLogin:
         
         return captcha_value
     
+    def seleccionar_sucursal(self, valor_sucursal="29374"):
+        """Selecciona la sucursal en el formulario tras el login."""
+        # Espera a que aparezca el <select> y esté listo para usar
+        select_el = self.wait.until(
+            EC.element_to_be_clickable((By.ID, "formIngreso:ctlSucursales"))
+        )
+        select = Select(select_el)
+        # Selecciona por value. Si prefieres por texto, usa select.select_by_visible_text("Medik Plus IPS Madrid")
+        select.select_by_value(valor_sucursal)
+
+        # Opcional: espera a que la petición AJAX de onchange termine
+        # (por ejemplo, que desaparezca el select antiguo o que cargue un nuevo elemento)
+        self.wait.until(EC.staleness_of(select_el))
+
+    def presionar_ingresar(self):
+        """Hace click en el botón Ingresar tras seleccionar sucursal."""
+        # Espera a que el botón esté disponible
+        btn = self.wait.until(
+            EC.element_to_be_clickable((By.ID, "formIngreso:btnIngresar"))
+        )
+        btn.click()
+    
     def mantener_sesion_abierta(self):
         """Mantiene la sesión abierta para que puedas interactuar manualmente"""
         print("\n✅ Sesión iniciada correctamente.")
@@ -247,6 +270,7 @@ if __name__ == "__main__":
         # Iniciar sesión (con resolución automática del captcha)
         if avicena.login(USUARIO, PASSWORD):
             # Mantener la sesión abierta para navegación manual
+            avicena.seleccionar_sucursal("29374")
             avicena.mantener_sesion_abierta()
         else:
             print("❌ Falló el inicio de sesión. Finalizando.")
